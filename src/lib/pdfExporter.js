@@ -416,6 +416,134 @@ function sanitize(str) {
     .join('')
 }
 
+// ─── Arabic / Urdu support ────────────────────────────────────────────────
+// pdf-lib + fontkit shapes Arabic letters (joining forms) and reverses a
+// right-to-left run on its own, but it does not do bidi: numbers and Latin
+// words inside an Arabic line come out mirrored. So we split the text into
+// directional runs, draw each run with the right font, and lay the runs out
+// in visual order ourselves.
+const ARABIC_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/
+const ARABIC_FONT_URLS = {
+  regular: '/fonts/NotoNaskhArabic-Regular.ttf',
+  bold: '/fonts/NotoNaskhArabic-Bold.ttf',
+}
+const arabicFontBytesCache = {}
+
+export function hasArabic(text) {
+  return ARABIC_RE.test(String(text || ''))
+}
+
+async function fetchArabicFontBytes(bold = false) {
+  const key = bold ? 'bold' : 'regular'
+  if (!arabicFontBytesCache[key]) {
+    const base = (import.meta.env && import.meta.env.BASE_URL) || '/'
+    const url = base.replace(/\/$/, '') + ARABIC_FONT_URLS[key]
+    const res = await fetch(url)
+    if (!res.ok) throw new Error('Arabic font not found: ' + url)
+    arabicFontBytesCache[key] = await res.arrayBuffer()
+  }
+  return arabicFontBytesCache[key]
+}
+
+/** Embed the bundled Noto Naskh Arabic font into a pdf-lib document (cached per doc). */
+export async function embedArabicFont(pdfDoc, fontCache, bold = false) {
+  const key = bold ? 'arabic-bold' : 'arabic-regular'
+  if (!fontCache[key]) {
+    pdfDoc.registerFontkit(fontkit)
+    const bytes = await fetchArabicFontBytes(bold)
+    fontCache[key] = await pdfDoc.embedFont(bytes, { subset: true })
+  }
+  return fontCache[key]
+}
+
+function charClass(ch) {
+  if (ARABIC_RE.test(ch)) return 'R'
+  if (/[A-Za-z\u00C0-\u024F0-9]/.test(ch)) return 'L'
+  return 'N'
+}
+
+/**
+ * Split one line into directional runs: [{ text, rtl }] in LOGICAL order.
+ * Neutral characters (spaces, punctuation) join the surrounding run when both
+ * neighbours agree, otherwise they take the paragraph direction.
+ */
+export function splitBidiRuns(line) {
+  const chars = [...String(line || '')]
+  if (!chars.length) return { baseRtl: false, runs: [] }
+  const classes = chars.map(charClass)
+  const firstStrong = classes.find((c) => c !== 'N')
+  const baseRtl = firstStrong === 'R'
+  const base = baseRtl ? 'R' : 'L'
+
+  // Resolve neutrals
+  const resolved = classes.slice()
+  let i = 0
+  while (i < resolved.length) {
+    if (resolved[i] !== 'N') { i++; continue }
+    let j = i
+    while (j < resolved.length && resolved[j] === 'N') j++
+    const prev = i > 0 ? resolved[i - 1] : base
+    const next = j < resolved.length ? resolved[j] : base
+    const cls = prev === next ? prev : base
+    for (let k = i; k < j; k++) resolved[k] = cls
+    i = j
+  }
+
+  const runs = []
+  for (let k = 0; k < chars.length; k++) {
+    const rtl = resolved[k] === 'R'
+    const last = runs[runs.length - 1]
+    if (last && last.rtl === rtl) last.text += chars[k]
+    else runs.push({ text: chars[k], rtl })
+  }
+  return { baseRtl, runs }
+}
+
+/** Total width of a bidi line at [size]. */
+export function bidiLineWidth(line, size, arabicFont, latinFont) {
+  const { runs } = splitBidiRuns(line)
+  return runs.reduce((w, run) => {
+    const font = run.rtl ? arabicFont : latinFont
+    try { return w + font.widthOfTextAtSize(run.text, size) } catch { return w }
+  }, 0)
+}
+
+/**
+ * Draw one line of mixed Arabic/Latin text starting at (x, y) — x is always
+ * the LEFT edge of the line, like page.drawText. Handles rotation.
+ */
+export function drawBidiLine(page, line, { x, y, size, arabicFont, latinFont, color, opacity, rotationDeg = 0 }) {
+  const { baseRtl, runs } = splitBidiRuns(line)
+  if (!runs.length) return 0
+  const visual = baseRtl ? [...runs].reverse() : runs
+  const angle = (Number(rotationDeg) || 0) * Math.PI / 180
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  let advance = 0
+  for (const run of visual) {
+    const font = run.rtl ? arabicFont : latinFont
+    let width = 0
+    try { width = font.widthOfTextAtSize(run.text, size) } catch { width = 0 }
+    // Leading/trailing spaces in a run have no glyph impact for RTL runs in
+    // fontkit, so measure them separately to keep spacing consistent.
+    try {
+      page.drawText(run.text, {
+        x: x + advance * cos,
+        y: y + advance * sin,
+        size,
+        font,
+        color,
+        opacity,
+        rotate: degrees(rotationDeg || 0),
+      })
+    } catch (_) {
+      // A glyph the font can't encode — skip the run rather than fail the export
+    }
+    advance += width
+  }
+  return advance
+}
+
 function canvasToPngBytes(canvas) {
   return new Promise((resolve, reject) => {
     canvas.toBlob(async (blob) => {
@@ -475,7 +603,7 @@ function drawVisualText(ctx, block, scale) {
   ctx.restore()
 }
 
-function drawVisualAnnotations(ctx, annotations, scale) {
+function drawVisualAnnotations(ctx, annotations, scale, fallbackBg = 'rgb(255,255,255)') {
   for (const ann of annotations || []) {
     const x = (ann.x || 0) * scale
     const y = (ann.y || 0) * scale
@@ -489,6 +617,10 @@ function drawVisualAnnotations(ctx, annotations, scale) {
       ctx.fillRect(x, y, w, h)
     } else if (ann.type === 'redact') {
       ctx.fillStyle = '#000000'
+      ctx.fillRect(x, y, w, h)
+    } else if (ann.type === 'whiteout') {
+      // Cover the area with the page's own background colour (white-out)
+      ctx.fillStyle = fallbackBg || '#ffffff'
       ctx.fillRect(x, y, w, h)
     } else if (ann.type === 'rect') {
       ctx.strokeStyle = ann.color || '#e84545'
@@ -511,6 +643,16 @@ function layerHasVisualEdits(layer) {
 }
 
 async function exportVisualPdf(originalArrayBuffer, editLayers, pageCount, pageBgs) {
+  // Make sure the bundled Arabic font is loaded so canvas text uses it
+  try {
+    if (document.fonts?.load) {
+      await Promise.all([
+        document.fonts.load('16px "Noto Naskh Arabic"'),
+        document.fonts.load('bold 16px "Noto Naskh Arabic"'),
+      ])
+    }
+  } catch (_) { /* font loading is best-effort */ }
+
   const requestedPageCount = Number(pageCount) || 0
   const requestedEditedPages = new Set()
 
@@ -574,13 +716,17 @@ async function exportVisualPdf(originalArrayBuffer, editLayers, pageCount, pageB
       const coordScale = renderScale / BASE_SCALE
       const fallbackBg = pageBgs?.[i] || 'rgb(255,255,255)'
 
+      const whiteouts = (layer.annotations || []).filter(a => a.type === 'whiteout')
+      const otherAnns = (layer.annotations || []).filter(a => a.type !== 'whiteout')
+      // White-outs go first so new text can be written on top of them
+      drawVisualAnnotations(ctx, whiteouts, coordScale, fallbackBg)
       for (const block of layer.texts || []) {
         if (block.isEdited) drawVisualCover(ctx, canvas, block, coordScale, fallbackBg)
       }
       for (const block of layer.texts || []) {
         drawVisualText(ctx, block, coordScale)
       }
-      drawVisualAnnotations(ctx, layer.annotations, coordScale)
+      drawVisualAnnotations(ctx, otherAnns, coordScale, fallbackBg)
 
       const pngBytes = await canvasToPngBytes(canvas)
       const png = await out.embedPng(pngBytes)
@@ -656,6 +802,13 @@ async function exportVectorPdf(originalArrayBuffer, editLayers, pageCount, pageB
       ? parseRgbString(pageBgs[i + 1].replace('rgb(','').replace(')',''))
       : rgb(1,1,1)
 
+    // 0. White-out areas drawn by the user (under any new text)
+    for (const ann of (layer.annotations || [])) {
+      if (ann.type !== 'whiteout') continue
+      const ax = ann.x / BASE_SCALE, aw = ann.width / BASE_SCALE, ah = ann.height / BASE_SCALE
+      page.drawRectangle({ x: ax, y: pageH - (ann.y / BASE_SCALE) - ah, width: aw, height: ah, color: bgRgb })
+    }
+
     // 1. Whiteout all edited original positions
     // Prefer each block's own locally-sampled color (matters on watermarks,
     // seals, or any non-flat region) over the single flat page-wide color.
@@ -671,6 +824,29 @@ async function exportVectorPdf(originalArrayBuffer, editLayers, pageCount, pageB
     // 2. Draw replacement + new text
     for (const block of (layer.texts || [])) {
       if (!block.str?.trim()) continue
+
+      // Arabic / Urdu text: bundled Naskh font + bidi-aware line drawing
+      if (hasArabic(block.str)) {
+        try {
+          const arabicFont = await embedArabicFont(pdfDoc, fontCache, !!block.fontBold)
+          const latinKey = block.fontBold ? StandardFonts.HelveticaBold : StandardFonts.Helvetica
+          if (!fontCache[latinKey]) fontCache[latinKey] = await pdfDoc.embedFont(latinKey)
+          const latinFont = fontCache[latinKey]
+          const color = hexToRgb(block.color || '#000000')
+          const { x, y, size } = canvasToPdf(block.x, block.y, block.fontSize, pageH, block.baselineOffset)
+          if (x < -20 || x > pageW + 20 || y < -20 || y > pageH + 20) continue
+          const lineHeight = Math.max((block.lineHeight || block.height || block.fontSize || 12) / BASE_SCALE, size * 1.15)
+          splitTextLines(block.str).forEach((line, index) => {
+            if (!line) return
+            drawBidiLine(page, line, {
+              x, y: y - index * lineHeight, size, arabicFont, latinFont, color,
+              rotationDeg: Number(block.rotation) || 0,
+            })
+          })
+        } catch (_) { /* skip un-renderable Arabic block */ }
+        continue
+      }
+
       const safe  = sanitize(block.str)
       if (!safe)  continue
 
@@ -706,6 +882,8 @@ async function exportVectorPdf(originalArrayBuffer, editLayers, pageCount, pageB
         page.drawRectangle({ x:ax, y:ay, width:aw, height:ah, color:rgb(1,0.92,0.15), opacity:0.4 })
       } else if (ann.type === 'redact') {
         page.drawRectangle({ x:ax, y:ay, width:aw, height:ah, color:rgb(0,0,0) })
+      } else if (ann.type === 'whiteout') {
+        // already drawn in step 0
       } else if (ann.type === 'rect') {
         page.drawRectangle({ x:ax, y:ay, width:aw, height:ah,
           borderColor:hexToRgb(ann.color||'#e84545'), borderWidth:1.5, opacity:0 })
@@ -961,7 +1139,18 @@ export async function addWatermark(input, textOrOptions, maybeOptions = {}) {
       : await doc.embedJpg(imageBytes)
   }
 
-  const safeText = sanitize(options.text || 'CONFIDENTIAL') || 'CONFIDENTIAL'
+  const rawText = String(options.text || 'CONFIDENTIAL')
+  const arabicMode = hasArabic(rawText) || options.fontFamily === 'NotoNaskhArabic'
+  const safeText = arabicMode ? rawText : (sanitize(rawText) || 'CONFIDENTIAL')
+
+  let arabicFont = null
+  let arabicLatinFont = null
+  if (arabicMode) {
+    arabicFont = await embedArabicFont(doc, fontCache, !!options.bold)
+    const latinName = options.bold ? StandardFonts.HelveticaBold : StandardFonts.Helvetica
+    if (!fontCache[latinName]) fontCache[latinName] = await doc.embedFont(latinName)
+    arabicLatinFont = fontCache[latinName]
+  }
 
   for (const pageNumber of targetPages) {
     const page = pages[pageNumber - 1]
@@ -986,8 +1175,28 @@ export async function addWatermark(input, textOrOptions, maybeOptions = {}) {
       continue
     }
 
-    const font = await getWatermarkFont()
     const fontSize = Math.max(Number(options.fontSize) || 52, 8)
+
+    if (arabicMode) {
+      const markWidth = bidiLineWidth(safeText, fontSize, arabicFont, arabicLatinFont)
+      const markHeight = fontSize * 1.2
+      const placements = buildWatermarkPlacements(pageWidth, pageHeight, markWidth, markHeight, options)
+      for (const placement of placements) {
+        drawBidiLine(page, safeText, {
+          x: placement.x,
+          y: pageHeight - placement.y - fontSize * 0.85,
+          size: fontSize,
+          arabicFont,
+          latinFont: arabicLatinFont,
+          color,
+          opacity,
+          rotationDeg: rotation,
+        })
+      }
+      continue
+    }
+
+    const font = await getWatermarkFont()
     const markWidth = font.widthOfTextAtSize(safeText, fontSize)
     const markHeight = fontSize * 1.05
     const placements = buildWatermarkPlacements(pageWidth, pageHeight, markWidth, markHeight, options)

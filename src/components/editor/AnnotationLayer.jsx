@@ -7,7 +7,7 @@ export default function AnnotationLayer({ pageNum, pageSize, activeTool }) {
   const svgRef = useRef(null)
   const [drawing, setDrawing] = useState(null)
 
-  const isDrawable = ['highlight', 'redact', 'shape', 'draw'].includes(activeTool)
+  const isDrawable = ['highlight', 'redact', 'whiteout', 'shape', 'draw'].includes(activeTool)
 
   const getPos = (e) => {
     const rect = svgRef.current.getBoundingClientRect()
@@ -38,6 +38,7 @@ export default function AnnotationLayer({ pageNum, pageSize, activeTool }) {
     const typeMap = {
       highlight: 'highlight',
       redact: 'redact',
+      whiteout: 'whiteout',
       shape: 'rect',
       draw: 'rect',
     }
@@ -59,11 +60,13 @@ export default function AnnotationLayer({ pageNum, pageSize, activeTool }) {
   const fillMap = {
     highlight: 'rgba(251,191,36,0.35)',
     redact:    'rgba(0,0,0,1)',
+    whiteout:  'rgba(255,255,255,1)',
     rect:      'rgba(232,69,69,0.08)',
   }
   const strokeMap = {
     highlight: 'rgba(251,191,36,0.6)',
     redact:    'transparent',
+    whiteout:  'rgba(59,130,246,0.35)',
     rect:      '#e84545',
   }
 
@@ -73,6 +76,8 @@ export default function AnnotationLayer({ pageNum, pageSize, activeTool }) {
       className={`${styles.svg} ${isDrawable ? styles.drawable : ''}`}
       width={pageSize.width}
       height={pageSize.height}
+      // Below text blocks unless drawing, so white-outs sit under new text
+      style={{ zIndex: isDrawable ? 15 : 5 }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -85,7 +90,8 @@ export default function AnnotationLayer({ pageNum, pageSize, activeTool }) {
           width={ann.width} height={ann.height}
           fill={fillMap[ann.type] || 'rgba(232,69,69,0.1)'}
           stroke={strokeMap[ann.type] || '#e84545'}
-          strokeWidth={ann.type === 'redact' ? 0 : 1.5}
+          strokeWidth={ann.type === 'redact' ? 0 : ann.type === 'whiteout' ? 0.75 : 1.5}
+          strokeDasharray={ann.type === 'whiteout' ? '3 2' : 'none'}
           rx={ann.type === 'rect' ? 2 : 0}
         />
       ))}
@@ -95,8 +101,8 @@ export default function AnnotationLayer({ pageNum, pageSize, activeTool }) {
         <rect
           x={drawing.x} y={drawing.y}
           width={drawing.w} height={drawing.h}
-          fill={activeTool === 'highlight' ? 'rgba(251,191,36,0.3)' : activeTool === 'redact' ? 'rgba(0,0,0,0.7)' : 'rgba(232,69,69,0.08)'}
-          stroke={activeTool === 'highlight' ? '#fbbf24' : activeTool === 'redact' ? 'transparent' : '#e84545'}
+          fill={activeTool === 'highlight' ? 'rgba(251,191,36,0.3)' : activeTool === 'redact' ? 'rgba(0,0,0,0.7)' : activeTool === 'whiteout' ? 'rgba(255,255,255,0.9)' : 'rgba(232,69,69,0.08)'}
+          stroke={activeTool === 'highlight' ? '#fbbf24' : activeTool === 'redact' ? 'transparent' : activeTool === 'whiteout' ? '#3b82f6' : '#e84545'}
           strokeWidth={1.5}
           strokeDasharray={activeTool === 'shape' ? '4 2' : 'none'}
           rx={2}

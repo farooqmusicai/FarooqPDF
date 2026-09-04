@@ -1,7 +1,6 @@
 import React from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import { Analytics } from '@vercel/analytics/react'
 import Landing from './pages/Landing.jsx'
 import Editor from './pages/Editor.jsx'
 import Tools from './pages/Tools.jsx'
@@ -22,7 +21,7 @@ export default function App() {
             background: '#1e1e22',
             color: '#f0f0f4',
             border: '1px solid rgba(255,255,255,0.1)',
-            fontFamily: "'DM Sans', sans-serif",
+            fontFamily: 'var(--font-sans)',
             fontSize: '13px',
             borderRadius: '8px',
           },
@@ -30,7 +29,6 @@ export default function App() {
           error:   { iconTheme: { primary: '#e84545', secondary: '#1e1e22' } },
         }}
       />
-      <Analytics />
     </>
   )
 }

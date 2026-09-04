@@ -4,15 +4,17 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Upload, FileText, AlertCircle } from 'lucide-react'
 import { usePdfStore } from '../../store/pdfStore.js'
+import { useT } from '../../i18n/index.jsx'
 import styles from './DropZone.module.css'
 
 export default function DropZone({ compact = false }) {
   const navigate = useNavigate()
   const { setFile } = usePdfStore()
+  const { t } = useT()
 
   const onDrop = useCallback(async (accepted, rejected) => {
     if (rejected.length > 0) {
-      toast.error('Only PDF files are supported')
+      toast.error(t('dz_only_pdf'))
       return
     }
     if (accepted.length === 0) return
@@ -20,9 +22,9 @@ export default function DropZone({ compact = false }) {
     const file = accepted[0]
     const arrayBuffer = await file.arrayBuffer()
     setFile(arrayBuffer, file.name, file.size)
-    toast.success(`Loaded ${file.name}`)
+    toast.success(t('dz_loaded', { name: file.name }))
     navigate('/editor')
-  }, [setFile, navigate])
+  }, [setFile, navigate, t])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -35,7 +37,7 @@ export default function DropZone({ compact = false }) {
       <div {...getRootProps()} className={`${styles.compact} ${isDragActive ? styles.dragging : ''}`}>
         <input {...getInputProps()} />
         <Upload size={16} />
-        <span>Open PDF</span>
+        <span>{t('dz_open')}</span>
       </div>
     )
   }
@@ -47,20 +49,20 @@ export default function DropZone({ compact = false }) {
         {isDragActive ? <FileText size={36} /> : <Upload size={36} />}
       </div>
       <div className={styles.title}>
-        {isDragActive ? 'Drop to open' : 'Drop your PDF here'}
+        {isDragActive ? t('dz_drop_to_open') : t('dz_drop_here')}
       </div>
       <div className={styles.sub}>
-        or <span className={styles.browse}>click to browse</span>
+        {t('dz_or')} <span className={styles.browse}>{t('dz_browse')}</span>
       </div>
       <div className={styles.note}>
         <AlertCircle size={12} />
-        Files are processed entirely in your browser — never uploaded anywhere
+        {t('dz_note')}
       </div>
       <div className={styles.formats}>
         <span>PDF</span>
-        <span>Scanned PDF</span>
+        <span>{t('dz_scanned')}</span>
         <span>PDF/A</span>
-        <span>PDF forms</span>
+        <span>{t('dz_forms')}</span>
       </div>
     </div>
   )

@@ -15,12 +15,14 @@ import {
   compressPdfToTarget, protectPdf
 } from '../lib/pdfExporter.js'
 import { loadPdf, renderThumbnail, renderPage } from '../lib/pdfRenderer.js'
-import { ocrCanvas } from '../lib/ocrEngine.js'
+import { ocrCanvas, OCR_LANGS } from '../lib/ocrEngine.js'
+import { useT } from '../i18n/index.jsx'
 import styles from './Tools.module.css'
 
 /* ─────────────────── shared helpers ─────────────────── */
 
-function FileDropper({ onFile, file, onClear, multiple = false, label = 'Drop PDF here or click to browse' }) {
+function FileDropper({ onFile, file, onClear, multiple = false, label }) {
+  const { t } = useT()
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: { 'application/pdf': ['.pdf'] },
     maxFiles: multiple ? undefined : 1,
@@ -44,7 +46,7 @@ function FileDropper({ onFile, file, onClear, multiple = false, label = 'Drop PD
     <div {...getRootProps()} className={`${styles.dropArea} ${isDragActive ? styles.dropActive : ''}`}>
       <input {...getInputProps()} />
       <Upload size={28} />
-      <span>{isDragActive ? 'Drop it!' : label}</span>
+      <span>{isDragActive ? t('t_drop_it') : (label || t('t_drop_label'))}</span>
     </div>
   )
 }
@@ -72,16 +74,17 @@ const WATERMARK_FONT_OPTIONS = [
   { id: 'Helvetica', label: 'Helvetica / Arial', css: 'Arial, Helvetica, sans-serif' },
   { id: 'Times-Roman', label: 'Times / Georgia', css: 'Georgia, "Times New Roman", serif' },
   { id: 'Courier', label: 'Courier Mono', css: '"Courier New", Courier, monospace' },
+  { id: 'NotoNaskhArabic', labelKey: 'wm_font_arabic', css: '"Noto Naskh Arabic", "Noto Sans", Arial, sans-serif' },
 ]
 
 const WATERMARK_POSITION_PRESETS = [
-  ['top-left', 'Top Left'],
-  ['top', 'Top'],
-  ['top-right', 'Top Right'],
-  ['center', 'Center'],
-  ['bottom-left', 'Bottom Left'],
-  ['bottom', 'Bottom'],
-  ['bottom-right', 'Bottom Right'],
+  ['top-left', 'wm_top_left'],
+  ['top', 'wm_top'],
+  ['top-right', 'wm_top_right'],
+  ['center', 'wm_center'],
+  ['bottom-left', 'wm_bottom_left'],
+  ['bottom', 'wm_bottom'],
+  ['bottom-right', 'wm_bottom_right'],
 ]
 
 let previewMeasureCtx = null
@@ -189,6 +192,7 @@ function buildPreviewPlacements(pageWidth, pageHeight, markWidth, markHeight, op
 /* ─────────────────── individual tools ─────────────────── */
 
 function MergeTool() {
+  const { t } = useT()
   const [files, setFiles] = useState([])
   const [busy, setBusy] = useState(false)
 
@@ -202,23 +206,23 @@ function MergeTool() {
   })
 
   const handleMerge = async () => {
-    if (files.length < 2) { toast.error('Add at least 2 PDFs'); return }
+    if (files.length < 2) { toast.error(t('mg_min2')); return }
     setBusy(true)
-    const tid = toast.loading(`Merging ${files.length} files...`)
+    const tid = toast.loading(t('mg_merging', { n: files.length }))
     try {
       const buffers = await Promise.all(files.map(f => f.arrayBuffer()))
       const bytes = await mergePdfs(buffers)
       downloadBytes(bytes, 'merged.pdf')
-      toast.success(`Done! Merged ${files.length} PDFs`, { id: tid })
-    } catch (e) { toast.error('Merge failed: ' + e.message, { id: tid }) }
+      toast.success(t('mg_done', { n: files.length }), { id: tid })
+    } catch (e) { toast.error(t('mg_failed', { msg: e.message }), { id: tid }) }
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Merge PDFs" desc="Combine multiple PDFs into one file. Add them below — order matters.">
+    <ToolShell title={t('tool_merge')} desc={t('mg_desc')}>
       <div {...getRootProps()} className={`${styles.dropArea} ${isDragActive ? styles.dropActive : ''}`}>
         <input {...getInputProps()} />
-        <Upload size={28} /><span>{isDragActive ? 'Drop!' : 'Drop PDFs here or click to add more'}</span>
+        <Upload size={28} /><span>{isDragActive ? t('mg_drop_active') : t('mg_drop')}</span>
       </div>
       {files.length > 0 && (
         <div className={styles.fileList}>
@@ -234,13 +238,14 @@ function MergeTool() {
         </div>
       )}
       <ActionBtn onClick={handleMerge} disabled={files.length < 2} loading={busy} icon={Merge}>
-        Merge {files.length} PDFs → merged.pdf
+        {t('mg_btn', { n: files.length })}
       </ActionBtn>
     </ToolShell>
   )
 }
 
 function SplitTool() {
+  const { t } = useT()
   const [file, setFile] = useState(null)
   const [mode, setMode] = useState('range') // range | every | all
   const [from, setFrom] = useState(1)
@@ -251,7 +256,7 @@ function SplitTool() {
   const handleSplit = async () => {
     if (!file) return
     setBusy(true)
-    const tid = toast.loading('Splitting...')
+    const tid = toast.loading(t('sp_splitting'))
     try {
       const buf = await file.arrayBuffer()
       const doc = await loadPdf(buf.slice(0))
@@ -264,36 +269,37 @@ function SplitTool() {
 
       const results = await splitPdf(buf, ranges)
       results.forEach((bytes, i) => downloadBytes(bytes, `split-part-${i+1}.pdf`))
-      toast.success(`Split into ${results.length} file(s)`, { id: tid })
-    } catch (e) { toast.error('Split failed: ' + e.message, { id: tid }) }
+      toast.success(t('sp_done', { n: results.length }), { id: tid })
+    } catch (e) { toast.error(t('sp_failed', { msg: e.message }), { id: tid }) }
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Split PDF" desc="Split by page range, every N pages, or extract every page separately.">
+    <ToolShell title={t('tool_split')} desc={t('sp_desc')}>
       <FileDropper file={file} onFile={setFile} onClear={() => setFile(null)} />
       <div className={styles.modeRow}>
-        {[['range','By range'],['every','Every N pages'],['all','All pages']].map(([v,l])=>(
+        {[['range',t('sp_by_range')],['every',t('sp_every_n')],['all',t('sp_all')]].map(([v,l])=>(
           <button key={v} className={`${styles.modeBtn} ${mode===v?styles.modeBtnActive:''}`} onClick={()=>setMode(v)}>{l}</button>
         ))}
       </div>
       {mode === 'range' && (
         <div className={styles.rangeRow}>
-          <label>From page <input type="number" min={1} value={from} onChange={e=>setFrom(+e.target.value)} className={styles.numInput}/></label>
-          <label>To page   <input type="number" min={1} value={to}   onChange={e=>setTo(+e.target.value)}   className={styles.numInput}/></label>
+          <label>{t('sp_from')} <input type="number" min={1} value={from} onChange={e=>setFrom(+e.target.value)} className={styles.numInput}/></label>
+          <label>{t('sp_to')} <input type="number" min={1} value={to}   onChange={e=>setTo(+e.target.value)}   className={styles.numInput}/></label>
         </div>
       )}
       {mode === 'every' && (
         <div className={styles.rangeRow}>
-          <label>Split every <input type="number" min={1} value={every} onChange={e=>setEvery(+e.target.value)} className={styles.numInput}/> pages</label>
+          <label>{t('sp_every')} <input type="number" min={1} value={every} onChange={e=>setEvery(+e.target.value)} className={styles.numInput}/> {t('sp_pages')}</label>
         </div>
       )}
-      <ActionBtn onClick={handleSplit} disabled={!file} loading={busy} icon={Scissors}>Split PDF</ActionBtn>
+      <ActionBtn onClick={handleSplit} disabled={!file} loading={busy} icon={Scissors}>{t('sp_btn')}</ActionBtn>
     </ToolShell>
   )
 }
 
 function CompressTool() {
+  const { t } = useT()
   const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -305,17 +311,17 @@ function CompressTool() {
     if (!file) return
     const targetBytes = targetKb ? Math.max(1, Number(targetKb)) * 1024 : null
     if (targetKb && (!Number.isFinite(targetBytes) || targetBytes <= 0)) {
-      toast.error('Enter a valid target size in KB')
+      toast.error(t('cp_invalid'))
       return
     }
     if (targetBytes && targetBytes >= file.size) {
-      toast.error('Target size must be smaller than the original file')
+      toast.error(t('cp_too_big'))
       return
     }
 
     setBusy(true)
     setProgress(null)
-    const tid = toast.loading(targetBytes ? 'Optimizing toward target size...' : 'Compressing...')
+    const tid = toast.loading(targetBytes ? t('cp_optimizing') : t('cp_compressing'))
     try {
       const buf   = await file.arrayBuffer()
       const output = targetBytes
@@ -324,7 +330,7 @@ function CompressTool() {
             preset,
             onProgress: (p) => {
               setProgress(p)
-              toast.loading(`Attempt ${p.attempt}/${p.attempts} - page ${p.page}/${p.pages}`, { id: tid })
+              toast.loading(t('cp_attempt', { a: p.attempt, b: p.attempts, p: p.page, q: p.pages }), { id: tid })
             },
           })
         : { bytes: await compressPdf(buf), mode: 'lossless', reachedTarget: true }
@@ -333,32 +339,32 @@ function CompressTool() {
       const name  = `compressed-${file.name}`
       downloadBytes(bytes, name)
       setResult({ original: file.size, compressed: bytes.byteLength, saved, ...output, targetBytes })
-      toast.success(output.reachedTarget ? `Compressed to ${(bytes.byteLength/1024).toFixed(0)} KB` : `Best possible: ${(bytes.byteLength/1024).toFixed(0)} KB`, { id: tid })
-    } catch (e) { toast.error('Compress failed: ' + e.message, { id: tid }) }
+      toast.success(output.reachedTarget ? t('cp_to', { n: (bytes.byteLength/1024).toFixed(0) }) : t('cp_best', { n: (bytes.byteLength/1024).toFixed(0) }), { id: tid })
+    } catch (e) { toast.error(t('cp_failed', { msg: e.message }), { id: tid }) }
     setProgress(null)
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Compress PDF" desc="Choose a target size and PDFZero will optimize visually toward it in-browser.">
+    <ToolShell title={t('tool_compress')} desc={t('cp_desc')}>
       <FileDropper file={file} onFile={setFile} onClear={() => { setFile(null); setResult(null); setProgress(null) }} />
       <div className={styles.formGrid}>
         <div className={styles.formField}>
-          <label className={styles.formLabel}>Target size in KB</label>
+          <label className={styles.formLabel}>{t('cp_target')}</label>
           <input
             className={styles.formInput}
             type="number"
             min={1}
             value={targetKb}
             onChange={e=>setTargetKb(e.target.value)}
-            placeholder={file ? `e.g. ${Math.max(50, Math.round(file.size / 1024 * 0.35))}` : 'e.g. 100'}
+            placeholder={t('cp_eg', { n: file ? Math.max(50, Math.round(file.size / 1024 * 0.35)) : 100 })}
           />
         </div>
         <div className={styles.modeRow}>
           {[
-            ['balanced', 'Balanced'],
-            ['high', 'Better quality'],
-            ['small', 'Smallest size'],
+            ['balanced', t('cp_balanced')],
+            ['high', t('cp_quality')],
+            ['small', t('cp_smallest')],
           ].map(([id, label]) => (
             <button key={id} className={`${styles.modeBtn} ${preset===id?styles.modeBtnActive:''}`} onClick={()=>setPreset(id)}>{label}</button>
           ))}
@@ -366,7 +372,7 @@ function CompressTool() {
       </div>
       {progress && (
         <div className={styles.progressBox}>
-          <div className={styles.progressText}>Attempt {progress.attempt}/{progress.attempts} - page {progress.page}/{progress.pages}</div>
+          <div className={styles.progressText}>{t('cp_attempt', { a: progress.attempt, b: progress.attempts, p: progress.page, q: progress.pages })}</div>
           <div className={styles.progressBar}>
             <div className={styles.progressFill} style={{ width: `${((progress.page / progress.pages) * 100).toFixed(0)}%` }} />
           </div>
@@ -374,21 +380,22 @@ function CompressTool() {
       )}
       {result && (
         <div className={styles.resultBox}>
-          <div className={styles.resultRow}><span>Original</span><strong>{(result.original/1024).toFixed(0)} KB</strong></div>
-          <div className={styles.resultRow}><span>Compressed</span><strong>{(result.compressed/1024).toFixed(0)} KB</strong></div>
-          {result.targetBytes && <div className={styles.resultRow}><span>Target</span><strong>{(result.targetBytes/1024).toFixed(0)} KB</strong></div>}
-          <div className={styles.resultRow}><span>Mode</span><strong>{result.mode === 'visual' ? 'Visual' : 'Lossless'}</strong></div>
-          <div className={`${styles.resultRow} ${styles.resultSaved}`}><span>Space saved</span><strong>{result.saved}%</strong></div>
-          {!result.reachedTarget && <div className={styles.infoBox}>The target was too aggressive for this PDF. The downloaded file is the smallest acceptable result PDFZero could create.</div>}
+          <div className={styles.resultRow}><span>{t('cp_original')}</span><strong>{(result.original/1024).toFixed(0)} KB</strong></div>
+          <div className={styles.resultRow}><span>{t('cp_compressed')}</span><strong>{(result.compressed/1024).toFixed(0)} KB</strong></div>
+          {result.targetBytes && <div className={styles.resultRow}><span>{t('cp_target_l')}</span><strong>{(result.targetBytes/1024).toFixed(0)} KB</strong></div>}
+          <div className={styles.resultRow}><span>{t('cp_mode')}</span><strong>{result.mode === 'visual' ? t('cp_visual') : t('cp_lossless')}</strong></div>
+          <div className={`${styles.resultRow} ${styles.resultSaved}`}><span>{t('cp_saved')}</span><strong>{result.saved}%</strong></div>
+          {!result.reachedTarget && <div className={styles.infoBox}>{t('cp_not_reached')}</div>}
         </div>
       )}
-      <div className={styles.infoBox}>Target-size compression can convert pages into images to reach much smaller files. Text selection may be lost in visual mode.</div>
-      <ActionBtn onClick={handleCompress} disabled={!file} loading={busy} icon={FileDown}>{targetKb ? `Compress below ${targetKb} KB` : 'Lossless Compress PDF'}</ActionBtn>
+      <div className={styles.infoBox}>{t('cp_info')}</div>
+      <ActionBtn onClick={handleCompress} disabled={!file} loading={busy} icon={FileDown}>{targetKb ? t('cp_btn_below', { n: targetKb }) : t('cp_btn_lossless')}</ActionBtn>
     </ToolShell>
   )
 }
 
 function RotateTool() {
+  const { t } = useT()
   const [file, setFile]   = useState(null)
   const [mode, setMode]   = useState('all') // all | single
   const [page, setPage]   = useState(1)
@@ -398,29 +405,29 @@ function RotateTool() {
   const handleRotate = async () => {
     if (!file) return
     setBusy(true)
-    const tid = toast.loading('Rotating...')
+    const tid = toast.loading(t('rt_rotating'))
     try {
       const buf   = await file.arrayBuffer()
       const bytes = mode === 'all'
         ? await rotateAllPages(buf, angle)
         : await rotatePdf(buf, page, angle)
       downloadBytes(bytes, `rotated-${file.name}`)
-      toast.success('Rotated PDF downloaded', { id: tid })
-    } catch (e) { toast.error('Rotate failed: ' + e.message, { id: tid }) }
+      toast.success(t('rt_done'), { id: tid })
+    } catch (e) { toast.error(t('rt_failed', { msg: e.message }), { id: tid }) }
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Rotate PDF" desc="Rotate all pages or a specific page by 90°, 180°, or 270°.">
+    <ToolShell title={t('tool_rotate')} desc={t('rt_desc')}>
       <FileDropper file={file} onFile={setFile} onClear={() => setFile(null)} />
       <div className={styles.modeRow}>
-        {[['all','All pages'],['single','Single page']].map(([v,l])=>(
+        {[['all',t('rt_all')],['single',t('rt_single')]].map(([v,l])=>(
           <button key={v} className={`${styles.modeBtn} ${mode===v?styles.modeBtnActive:''}`} onClick={()=>setMode(v)}>{l}</button>
         ))}
       </div>
       {mode === 'single' && (
         <div className={styles.rangeRow}>
-          <label>Page number <input type="number" min={1} value={page} onChange={e=>setPage(+e.target.value)} className={styles.numInput}/></label>
+          <label>{t('rt_page_number')} <input type="number" min={1} value={page} onChange={e=>setPage(+e.target.value)} className={styles.numInput}/></label>
         </div>
       )}
       <div className={styles.angleRow}>
@@ -430,12 +437,13 @@ function RotateTool() {
           </button>
         ))}
       </div>
-      <ActionBtn onClick={handleRotate} disabled={!file} loading={busy} icon={RotateCcw}>Rotate {angle}°</ActionBtn>
+      <ActionBtn onClick={handleRotate} disabled={!file} loading={busy} icon={RotateCcw}>{t('rt_btn', { n: angle })}</ActionBtn>
     </ToolShell>
   )
 }
 
 function WatermarkTool() {
+  const { t } = useT()
   const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -492,7 +500,7 @@ function WatermarkTool() {
       } catch (e) {
         if (!cancelled) {
           setPreviewSrc('')
-          toast.error('Preview failed: ' + e.message)
+          toast.error(t('wm_preview_failed', { msg: e.message }))
         }
       } finally {
         if (!cancelled) setPreviewLoading(false)
@@ -550,16 +558,16 @@ function WatermarkTool() {
     }
 
     if (watermarkType === 'text' && !text.trim()) {
-      toast.error('Enter watermark text')
+      toast.error(t('wm_enter_text'))
       return
     }
     if (watermarkType === 'image' && !imageFile) {
-      toast.error('Choose a PNG or JPG watermark image')
+      toast.error(t('wm_choose_img_err'))
       return
     }
 
     setBusy(true)
-    const tid = toast.loading('Applying watermark...')
+    const tid = toast.loading(t('wm_applying'))
     try {
       const buf = await file.arrayBuffer()
       const options = {
@@ -587,47 +595,47 @@ function WatermarkTool() {
 
       const bytes = await addWatermark(buf, options)
       downloadBytes(bytes, `watermarked-${file.name}`)
-      toast.success(`Watermark applied to ${targetPages.length} page${targetPages.length === 1 ? '' : 's'}`, { id: tid })
+      toast.success(t('wm_applied', { n: targetPages.length }), { id: tid })
     } catch (e) {
-      toast.error('Failed: ' + e.message, { id: tid })
+      toast.error(t('t_failed', { msg: e.message }), { id: tid })
     }
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Add Watermark" desc="Text or image watermarks with live preview, placement control, page targeting, and tiled mode." wide>
+    <ToolShell title={t('tool_watermark')} desc={t('wm_desc')} wide>
       <FileDropper file={file} onFile={setFile} onClear={() => setFile(null)} />
 
       <div className={styles.watermarkLayout}>
         <div className={styles.watermarkPanel}>
           <div className={styles.sectionCard}>
-            <div className={styles.sectionCardTitle}>Watermark Type</div>
+            <div className={styles.sectionCardTitle}>{t('wm_type')}</div>
             <div className={styles.modeRow}>
               <button className={`${styles.modeBtn} ${watermarkType === 'text' ? styles.modeBtnActive : ''}`} onClick={() => setWatermarkType('text')}>
-                Text
+                {t('wm_text')}
               </button>
               <button className={`${styles.modeBtn} ${watermarkType === 'image' ? styles.modeBtnActive : ''}`} onClick={() => setWatermarkType('image')}>
-                <ImageIcon size={13} /> Image
+                <ImageIcon size={13} /> {t('wm_image')}
               </button>
             </div>
 
             {watermarkType === 'text' ? (
               <div className={styles.watermarkFieldGrid}>
                 <div className={styles.formField}>
-                  <label className={styles.formLabel}>Watermark text</label>
-                  <input className={styles.formInput} value={text} onChange={e => setText(e.target.value)} placeholder="e.g. CONFIDENTIAL" />
+                  <label className={styles.formLabel}>{t('wm_text_label')}</label>
+                  <input className={styles.formInput} value={text} onChange={e => setText(e.target.value)} placeholder={t('wm_text_ph')} dir="auto" />
                 </div>
                 <div className={styles.dualGrid}>
                   <div className={styles.formField}>
-                    <label className={styles.formLabel}>Font family</label>
+                    <label className={styles.formLabel}>{t('wm_font')}</label>
                     <select className={styles.formInput} value={fontFamily} onChange={e => setFontFamily(e.target.value)}>
                       {WATERMARK_FONT_OPTIONS.map((font) => (
-                        <option key={font.id} value={font.id}>{font.label}</option>
+                        <option key={font.id} value={font.id}>{font.labelKey ? t(font.labelKey) : font.label}</option>
                       ))}
                     </select>
                   </div>
                   <div className={styles.formField}>
-                    <label className={styles.formLabel}>Text color</label>
+                    <label className={styles.formLabel}>{t('wm_color')}</label>
                     <div className={styles.colorInputRow}>
                       <input className={styles.colorInput} type="color" value={color} onChange={e => setColor(e.target.value)} />
                       <input className={styles.formInput} value={color} onChange={e => setColor(e.target.value)} />
@@ -635,8 +643,8 @@ function WatermarkTool() {
                   </div>
                 </div>
                 <div className={styles.toggleRow}>
-                  <button className={`${styles.toggleBtn} ${bold ? styles.toggleBtnActive : ''}`} onClick={() => setBold(v => !v)}>Bold</button>
-                  <button className={`${styles.toggleBtn} ${italic ? styles.toggleBtnActive : ''}`} onClick={() => setItalic(v => !v)}>Italic</button>
+                  <button className={`${styles.toggleBtn} ${bold ? styles.toggleBtnActive : ''}`} onClick={() => setBold(v => !v)}>{t('wm_bold')}</button>
+                  <button className={`${styles.toggleBtn} ${italic ? styles.toggleBtnActive : ''}`} onClick={() => setItalic(v => !v)}>{t('wm_italic')}</button>
                 </div>
               </div>
             ) : (
@@ -652,7 +660,7 @@ function WatermarkTool() {
                   <label className={styles.imageDropArea}>
                     <input type="file" accept="image/png,image/jpeg" hidden onChange={e => setImageFile(e.target.files?.[0] || null)} />
                     <ImageIcon size={18} />
-                    <span>Choose PNG or JPG watermark image</span>
+                    <span>{t('wm_choose_image')}</span>
                   </label>
                 )}
               </div>
@@ -660,10 +668,10 @@ function WatermarkTool() {
           </div>
 
           <div className={styles.sectionCard}>
-            <div className={styles.sectionCardTitle}>Appearance</div>
+            <div className={styles.sectionCardTitle}>{t('wm_appearance')}</div>
             <div className={styles.formField}>
               <label className={styles.formLabel}>
-                {watermarkType === 'text' ? `Font size: ${size}pt` : `Image size: ${imageScale}% of page width`}
+                {watermarkType === 'text' ? t('wm_font_size', { n: size }) : t('wm_image_size', { n: imageScale })}
               </label>
               <input
                 type="range"
@@ -675,12 +683,12 @@ function WatermarkTool() {
               />
             </div>
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Opacity: {opacity}%</label>
+              <label className={styles.formLabel}>{t('wm_opacity', { n: opacity })}</label>
               <input type="range" min={5} max={80} value={opacity} onChange={e => setOpacity(+e.target.value)} className={styles.slider} />
             </div>
             <div className={styles.dualGrid}>
               <div className={styles.formField}>
-                <label className={styles.formLabel}>Rotation</label>
+                <label className={styles.formLabel}>{t('wm_rotation')}</label>
                 <div className={styles.inlineControlRow}>
                   <input type="range" min={0} max={360} value={rotation} onChange={e => setRotation(+e.target.value)} className={styles.slider} />
                   <input className={styles.miniInput} type="number" min={0} max={360} value={rotation} onChange={e => setRotation(Math.max(0, Math.min(360, +e.target.value || 0)))} />
@@ -688,57 +696,57 @@ function WatermarkTool() {
               </div>
               <label className={styles.checkPill}>
                 <input type="checkbox" checked={tiled} onChange={e => setTiled(e.target.checked)} />
-                Repeated / tiled
+                {t('wm_tiled')}
               </label>
             </div>
           </div>
 
           <div className={styles.sectionCard}>
-            <div className={styles.sectionCardTitle}>Placement</div>
+            <div className={styles.sectionCardTitle}>{t('wm_placement')}</div>
             <div className={styles.presetGrid}>
               {WATERMARK_POSITION_PRESETS.map(([id, label]) => (
                 <button key={id} className={`${styles.presetBtn} ${positionPreset === id ? styles.presetBtnActive : ''}`} onClick={() => setPositionPreset(id)}>
-                  {label}
+                  {t(label)}
                 </button>
               ))}
             </div>
             <div className={styles.dualGrid}>
               <div className={styles.formField}>
-                <label className={styles.formLabel}>X offset</label>
+                <label className={styles.formLabel}>{t('wm_x')}</label>
                 <input className={styles.formInput} type="number" value={offsetX} onChange={e => setOffsetX(+e.target.value || 0)} />
               </div>
               <div className={styles.formField}>
-                <label className={styles.formLabel}>Y offset</label>
+                <label className={styles.formLabel}>{t('wm_y')}</label>
                 <input className={styles.formInput} type="number" value={offsetY} onChange={e => setOffsetY(+e.target.value || 0)} />
               </div>
             </div>
           </div>
 
           <div className={styles.sectionCard}>
-            <div className={styles.sectionCardTitle}>Pages</div>
+            <div className={styles.sectionCardTitle}>{t('wm_pages')}</div>
             <div className={styles.modeRow}>
-              <button className={`${styles.modeBtn} ${pageMode === 'all' ? styles.modeBtnActive : ''}`} onClick={() => setPageMode('all')}>All pages</button>
-              <button className={`${styles.modeBtn} ${pageMode === 'specific' ? styles.modeBtnActive : ''}`} onClick={() => setPageMode('specific')}>Specific pages</button>
-              <button className={`${styles.modeBtn} ${pageMode === 'ranges' ? styles.modeBtnActive : ''}`} onClick={() => setPageMode('ranges')}>Page ranges</button>
+              <button className={`${styles.modeBtn} ${pageMode === 'all' ? styles.modeBtnActive : ''}`} onClick={() => setPageMode('all')}>{t('wm_all_pages')}</button>
+              <button className={`${styles.modeBtn} ${pageMode === 'specific' ? styles.modeBtnActive : ''}`} onClick={() => setPageMode('specific')}>{t('wm_specific')}</button>
+              <button className={`${styles.modeBtn} ${pageMode === 'ranges' ? styles.modeBtnActive : ''}`} onClick={() => setPageMode('ranges')}>{t('wm_ranges')}</button>
             </div>
             {pageMode !== 'all' && (
               <div className={styles.formField}>
                 <label className={styles.formLabel}>
-                  {pageMode === 'specific' ? 'Pages like 1, 3, 7' : 'Ranges like 1-3, 6, 9-12'}
+                  {pageMode === 'specific' ? t('wm_pages_like') : t('wm_ranges_like')}
                 </label>
                 <input className={styles.formInput} value={pageInput} onChange={e => setPageInput(e.target.value)} placeholder={pageMode === 'specific' ? '1, 3, 7' : '1-3, 6, 9-12'} />
               </div>
             )}
-            <div className={styles.infoBox}>Loaded PDF: {pageCount || 0} page{pageCount === 1 ? '' : 's'}.</div>
+            <div className={styles.infoBox}>{t('wm_loaded', { n: pageCount || 0 })}</div>
           </div>
         </div>
 
         <div className={`${styles.watermarkPanel} ${styles.previewPanel}`}>
           <div className={styles.sectionCard}>
-            <div className={styles.sectionCardTitle}>Live Preview</div>
-            <div className={styles.previewMeta}>Preview uses page 1 of your PDF and updates as you change settings.</div>
+            <div className={styles.sectionCardTitle}>{t('wm_preview')}</div>
+            <div className={styles.previewMeta}>{t('wm_preview_meta')}</div>
             {previewLoading ? (
-              <div className={styles.previewEmpty}><Loader2 size={18} className={styles.spin} /> Rendering preview...</div>
+              <div className={styles.previewEmpty}><Loader2 size={18} className={styles.spin} /> {t('wm_rendering')}</div>
             ) : previewSrc ? (
               <div className={styles.previewFrame} style={{ aspectRatio: `${previewDims.width} / ${previewDims.height}` }}>
                 <img src={previewSrc} alt="Watermark preview" className={styles.previewImage} />
@@ -782,11 +790,11 @@ function WatermarkTool() {
                 </div>
               </div>
             ) : (
-              <div className={styles.previewEmpty}>Add a PDF to generate the preview.</div>
+              <div className={styles.previewEmpty}>{t('wm_add_pdf')}</div>
             )}
           </div>
           <ActionBtn onClick={handleWatermark} disabled={!canApply} loading={busy} icon={Droplets}>
-            Apply Watermark
+            {t('wm_btn')}
           </ActionBtn>
         </div>
       </div>
@@ -795,6 +803,7 @@ function WatermarkTool() {
 }
 
 function ExtractTool() {
+  const { t } = useT()
   const [file, setFile]   = useState(null)
   const [pages, setPages] = useState('')
   const [busy, setBusy]   = useState(false)
@@ -802,7 +811,7 @@ function ExtractTool() {
   const handleExtract = async () => {
     if (!file || !pages.trim()) return
     setBusy(true)
-    const tid = toast.loading('Extracting...')
+    const tid = toast.loading(t('ex_extracting'))
     try {
       const buf = await file.arrayBuffer()
       // Parse "1,3,5-8" style input
@@ -820,24 +829,25 @@ function ExtractTool() {
       const unique = [...new Set(nums)].sort((a,b)=>a-b)
       const bytes  = await extractPages(buf, unique)
       downloadBytes(bytes, `extracted-pages-${file.name}`)
-      toast.success(`Extracted ${unique.length} pages`, { id: tid })
-    } catch (e) { toast.error('Extract failed: ' + e.message, { id: tid }) }
+      toast.success(t('ex_done', { n: unique.length }), { id: tid })
+    } catch (e) { toast.error(t('ex_failed', { msg: e.message }), { id: tid }) }
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Extract Pages" desc="Pull specific pages out of a PDF into a new file.">
+    <ToolShell title={t('tool_extract')} desc={t('ex_desc')}>
       <FileDropper file={file} onFile={setFile} onClear={() => setFile(null)} />
       <div className={styles.formField}>
-        <label className={styles.formLabel}>Pages to extract (e.g. 1, 3, 5-8)</label>
+        <label className={styles.formLabel}>{t('ex_label')}</label>
         <input className={styles.formInput} value={pages} onChange={e=>setPages(e.target.value)} placeholder="1, 3, 5-8, 12" />
       </div>
-      <ActionBtn onClick={handleExtract} disabled={!file || !pages.trim()} loading={busy} icon={FileSearch}>Extract Pages</ActionBtn>
+      <ActionBtn onClick={handleExtract} disabled={!file || !pages.trim()} loading={busy} icon={FileSearch}>{t('ex_btn')}</ActionBtn>
     </ToolShell>
   )
 }
 
 function ReorderTool() {
+  const { t } = useT()
   const [file, setFile]     = useState(null)
   const [thumbs, setThumbs] = useState([])
   const [order, setOrder]   = useState([])
@@ -860,7 +870,7 @@ function ReorderTool() {
         ts.push({ page: i, dataUrl })
       }
       setThumbs(ts)
-    } catch (e) { toast.error('Failed to load: ' + e.message) }
+    } catch (e) { toast.error(t('ro_load_failed', { msg: e.message })) }
     setLoading(false)
   }
 
@@ -882,18 +892,18 @@ function ReorderTool() {
   const handleSave = async () => {
     if (!file) return
     setBusy(true)
-    const tid = toast.loading('Reordering pages...')
+    const tid = toast.loading(t('ro_reordering'))
     try {
       const buf   = await file.arrayBuffer()
       const bytes = await reorderPages(buf, order)
       downloadBytes(bytes, `reordered-${file.name}`)
-      toast.success('Done!', { id: tid })
-    } catch (e) { toast.error('Failed: ' + e.message, { id: tid }) }
+      toast.success(t('ro_done'), { id: tid })
+    } catch (e) { toast.error(t('t_failed', { msg: e.message }), { id: tid }) }
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Reorder Pages" desc="Drag and drop pages into the order you want, then download.">
+    <ToolShell title={t('tool_reorder')} desc={t('ro_desc')}>
       {!file
         ? <FileDropper file={null} onFile={onFile} onClear={() => {}} />
         : (
@@ -904,7 +914,7 @@ function ReorderTool() {
               <button className={styles.removeBtn} onClick={() => { setFile(null); setThumbs([]); setOrder([]) }}><X size={12}/></button>
             </div>
             {loading
-              ? <div className={styles.loadingRow}><Loader2 size={18} className={styles.spin}/> Loading pages...</div>
+              ? <div className={styles.loadingRow}><Loader2 size={18} className={styles.spin}/> {t('ro_loading')}</div>
               : (
                 <div className={styles.reorderGrid}>
                   {thumbs.map((t, i) => (
@@ -917,14 +927,14 @@ function ReorderTool() {
                       onDrop={() => handleDrop(i)}
                     >
                       <div className={styles.reorderHandle}><GripVertical size={12}/></div>
-                      <img src={t.dataUrl} alt={`Page ${t.page}`} className={styles.reorderThumb} />
+                      <img src={t.dataUrl} alt={String(t.page)} className={styles.reorderThumb} />
                       <span className={styles.reorderNum}>{i+1}</span>
                     </div>
                   ))}
                 </div>
               )
             }
-            <ActionBtn onClick={handleSave} disabled={!file || loading} loading={busy} icon={Check}>Save Reordered PDF</ActionBtn>
+            <ActionBtn onClick={handleSave} disabled={!file || loading} loading={busy} icon={Check}>{t('ro_btn')}</ActionBtn>
           </>
         )
       }
@@ -933,16 +943,17 @@ function ReorderTool() {
 }
 
 function OcrTool() {
+  const { t, lang } = useT()
   const [file, setFile]     = useState(null)
   const [busy, setBusy]     = useState(false)
   const [progress, setProgress] = useState(0)
-  const navigate = useNavigate()
+  const [ocrLang, setOcrLang] = useState(() => ({ ar: 'ara', ur: 'urd' }[lang] || 'eng'))
 
   const handleOcr = async () => {
     if (!file) return
     setBusy(true)
     setProgress(0)
-    const tid = toast.loading('Initialising OCR engine...')
+    const tid = toast.loading(t('oc_init'))
     try {
       const { renderPage } = await import('../lib/pdfRenderer.js')
       const { ocrCanvas }  = await import('../lib/ocrEngine.js')
@@ -952,9 +963,9 @@ function OcrTool() {
       const allText = []
 
       for (let p = 1; p <= total; p++) {
-        toast.loading(`OCR page ${p}/${total}...`, { id: tid })
+        toast.loading(t('oc_page', { p, q: total }), { id: tid })
         const { canvas } = await renderPage(p, 1)
-        const words = await ocrCanvas(canvas, pct => setProgress(Math.round((p-1)/total*100 + pct/total)))
+        const words = await ocrCanvas(canvas, pct => setProgress(Math.round((p-1)/total*100 + pct/total)), ocrLang)
         if (words.length) allText.push(`--- Page ${p} ---\n` + words.map(w=>w.str).join(' '))
       }
 
@@ -964,15 +975,21 @@ function OcrTool() {
       const a    = document.createElement('a')
       a.href = url; a.download = file.name.replace('.pdf','') + '-ocr.txt'; a.click()
       URL.revokeObjectURL(url)
-      toast.success(`OCR complete — ${total} pages`, { id: tid })
-    } catch (e) { toast.error('OCR failed: ' + e.message, { id: tid }) }
+      toast.success(t('oc_done', { n: total }), { id: tid })
+    } catch (e) { toast.error(t('oc_failed', { msg: e.message }), { id: tid }) }
     setBusy(false)
     setProgress(0)
   }
 
   return (
-    <ToolShell title="OCR Scanner" desc="Extract text from scanned or image-based PDFs using Tesseract.js — runs 100% offline.">
+    <ToolShell title={t('tool_ocr')} desc={t('oc_desc')}>
       <FileDropper file={file} onFile={setFile} onClear={() => setFile(null)} />
+      <div className={styles.formField}>
+        <label className={styles.formLabel}>{t('oc_lang')}</label>
+        <select className={styles.formInput} value={ocrLang} onChange={e => setOcrLang(e.target.value)} disabled={busy}>
+          {OCR_LANGS.map(l => <option key={l.code} value={l.code}>{t(l.label)}</option>)}
+        </select>
+      </div>
       {busy && (
         <div className={styles.progressBar}>
           <div className={styles.progressFill} style={{ width: `${progress}%` }} />
@@ -980,13 +997,14 @@ function OcrTool() {
         </div>
       )}
       <ActionBtn onClick={handleOcr} disabled={!file} loading={busy} icon={ScanLine}>
-        {busy ? `Scanning... ${progress}%` : 'Run OCR & Download Text'}
+        {busy ? t('oc_scanning', { n: progress }) : t('oc_btn')}
       </ActionBtn>
     </ToolShell>
   )
 }
 
 function ProtectTool() {
+  const { t } = useT()
   const [file, setFile] = useState(null)
   const [pw, setPw]     = useState('')
   const [ownerPw, setOwnerPw] = useState('')
@@ -999,7 +1017,7 @@ function ProtectTool() {
   const handleProtect = async () => {
     if (!file || !pw) return
     setBusy(true)
-    const tid = toast.loading('Encrypting...')
+    const tid = toast.loading(t('pr_encrypting'))
     try {
       const buf = await file.arrayBuffer()
       const bytes = await protectPdf(buf, pw, {
@@ -1010,22 +1028,22 @@ function ProtectTool() {
         allowModifying,
       })
       downloadBytes(bytes, `protected-${file.name}`)
-      toast.success('Password-protected PDF downloaded', { id: tid })
-    } catch (e) { toast.error('Failed: ' + e.message, { id: tid }) }
+      toast.success(t('pr_done'), { id: tid })
+    } catch (e) { toast.error(t('t_failed', { msg: e.message }), { id: tid }) }
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Protect PDF" desc="Add a real open-password lock with AES-256 encryption directly in your browser.">
+    <ToolShell title={t('tool_protect')} desc={t('pr_desc')}>
       <FileDropper file={file} onFile={setFile} onClear={() => setFile(null)} />
       <div className={styles.formGrid}>
         <div className={styles.formField}>
-          <label className={styles.formLabel}>Open password</label>
-          <input className={styles.formInput} type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder="Required to open PDF" />
+          <label className={styles.formLabel}>{t('pr_open_pw')}</label>
+          <input className={styles.formInput} type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder={t('pr_open_ph')} />
         </div>
         <div className={styles.formField}>
-          <label className={styles.formLabel}>Owner password</label>
-          <input className={styles.formInput} type="password" value={ownerPw} onChange={e=>setOwnerPw(e.target.value)} placeholder="Optional admin password" />
+          <label className={styles.formLabel}>{t('pr_owner_pw')}</label>
+          <input className={styles.formInput} type="password" value={ownerPw} onChange={e=>setOwnerPw(e.target.value)} placeholder={t('pr_owner_ph')} />
         </div>
         <div className={styles.modeRow}>
           {['AES-256', 'RC4'].map(id => (
@@ -1033,83 +1051,86 @@ function ProtectTool() {
           ))}
         </div>
         <div className={styles.checkGrid}>
-          <label><input type="checkbox" checked={allowPrinting} onChange={e=>setAllowPrinting(e.target.checked)} /> Allow printing</label>
-          <label><input type="checkbox" checked={allowCopying} onChange={e=>setAllowCopying(e.target.checked)} /> Allow copying</label>
-          <label><input type="checkbox" checked={allowModifying} onChange={e=>setAllowModifying(e.target.checked)} /> Allow editing</label>
+          <label><input type="checkbox" checked={allowPrinting} onChange={e=>setAllowPrinting(e.target.checked)} /> {t('pr_allow_print')}</label>
+          <label><input type="checkbox" checked={allowCopying} onChange={e=>setAllowCopying(e.target.checked)} /> {t('pr_allow_copy')}</label>
+          <label><input type="checkbox" checked={allowModifying} onChange={e=>setAllowModifying(e.target.checked)} /> {t('pr_allow_edit')}</label>
         </div>
       </div>
       <div className={styles.infoBox}>
-        Modern readers support AES-256. Use RC4 only if you need compatibility with older PDF readers.
+        {t('pr_info')}
       </div>
-      <ActionBtn onClick={handleProtect} disabled={!file || !pw} loading={busy} icon={Lock}>Protect PDF</ActionBtn>
+      <ActionBtn onClick={handleProtect} disabled={!file || !pw} loading={busy} icon={Lock}>{t('pr_btn')}</ActionBtn>
     </ToolShell>
   )
 }
 function UnlockTool() {
+  const { t } = useT()
   const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
 
   const handleUnlock = async () => {
     if (!file) return
     setBusy(true)
-    const tid = toast.loading('Removing restrictions...')
+    const tid = toast.loading(t('un_removing'))
     try {
       const { PDFDocument } = await import('pdf-lib')
       const buf   = await file.arrayBuffer()
       const doc   = await PDFDocument.load(buf, { ignoreEncryption: true })
       const bytes = await doc.save()
       downloadBytes(bytes, `unlocked-${file.name}`)
-      toast.success('PDF saved without restrictions', { id: tid })
-    } catch (e) { toast.error('Failed: ' + e.message, { id: tid }) }
+      toast.success(t('un_done'), { id: tid })
+    } catch (e) { toast.error(t('t_failed', { msg: e.message }), { id: tid }) }
     setBusy(false)
   }
 
   return (
-    <ToolShell title="Unlock PDF" desc="Remove copy/print restrictions from a PDF you own.">
+    <ToolShell title={t('tool_unlock')} desc={t('un_desc')}>
       <FileDropper file={file} onFile={setFile} onClear={() => setFile(null)} />
       <div className={styles.infoBox}>
-        ℹ️ This removes PDF user restrictions (copy, print). It does not bypass strong AES-256 owner passwords.
+        {t('un_info')}
       </div>
-      <ActionBtn onClick={handleUnlock} disabled={!file} loading={busy} icon={Unlock}>Remove Restrictions</ActionBtn>
+      <ActionBtn onClick={handleUnlock} disabled={!file} loading={busy} icon={Unlock}>{t('un_btn')}</ActionBtn>
     </ToolShell>
   )
 }
 
 function RedactTool() {
+  const { t } = useT()
   const navigate = useNavigate()
   return (
-    <ToolShell title="Redact PDF" desc="Permanently black out sensitive content in the PDF editor.">
+    <ToolShell title={t('tool_redact')} desc={t('rd_desc')}>
       <div className={styles.infoBox} style={{ borderColor: 'rgba(232,69,69,0.3)', background: 'rgba(232,69,69,0.05)' }}>
-        🎯 Redaction works in the <strong>PDF Editor</strong>. Open your PDF, select the <strong>Redact tool</strong> in the toolbar, then drag over any content to permanently black it out.
+        {t('rd_info')}
       </div>
-      <ActionBtn onClick={() => navigate('/editor')} icon={Edit3}>Open PDF Editor</ActionBtn>
+      <ActionBtn onClick={() => navigate('/editor')} icon={Edit3}>{t('rd_btn')}</ActionBtn>
     </ToolShell>
   )
 }
 
 function EditTool() {
+  const { t } = useT()
   const navigate = useNavigate()
   return (
-    <ToolShell title="Edit PDF" desc="Full in-browser PDF editor — edit text, add annotations, sign, and more.">
-      <ActionBtn onClick={() => navigate('/editor')} icon={Edit3}>Open PDF Editor →</ActionBtn>
+    <ToolShell title={t('tool_edit')} desc={t('et_desc')}>
+      <ActionBtn onClick={() => navigate('/editor')} icon={Edit3}>{t('et_btn')}</ActionBtn>
     </ToolShell>
   )
 }
 
 /* ─────────────────── tool registry ─────────────────── */
 const TOOL_DEFS = [
-  { id:'edit',      icon:Edit3,       label:'Edit PDF',       color:'#e84545', category:'Edit',     desc:'Edit text, images, annotate.' },
-  { id:'merge',     icon:Merge,       label:'Merge PDFs',     color:'#3b82f6', category:'Organize', desc:'Combine multiple PDFs into one.' },
-  { id:'split',     icon:Scissors,    label:'Split PDF',      color:'#e84545', category:'Organize', desc:'Split by range or every N pages.' },
-  { id:'extract',   icon:FileSearch,  label:'Extract Pages',  color:'#f59e0b', category:'Organize', desc:'Pull specific pages into a new file.' },
-  { id:'reorder',   icon:Layers,      label:'Reorder Pages',  color:'#8b5cf6', category:'Organize', desc:'Drag-and-drop page reordering.' },
-  { id:'rotate',    icon:RotateCcw,   label:'Rotate PDF',     color:'#8b5cf6', category:'Organize', desc:'Rotate pages 90°, 180°, or 270°.' },
-  { id:'compress',  icon:FileDown,    label:'Compress PDF',   color:'#f59e0b', category:'Optimize', desc:'Target-size visual compression.' },
-  { id:'ocr',       icon:ScanLine,    label:'OCR Scanner',    color:'#10b981', category:'Convert',  desc:'Extract text from scanned PDFs.' },
-  { id:'watermark', icon:Droplets,    label:'Add Watermark',  color:'#06b6d4', category:'Secure',   desc:'Text or image watermarks with preview and page targeting.' },
-  { id:'protect',   icon:Lock,        label:'Protect PDF',    color:'#e84545', category:'Secure',   desc:'Add password encryption.' },
-  { id:'unlock',    icon:Unlock,      label:'Unlock PDF',     color:'#10b981', category:'Secure',   desc:'Remove copy/print restrictions.' },
-  { id:'redact',    icon:EyeOff,      label:'Redact PDF',     color:'#1a1a1a', category:'Secure',   desc:'Black out sensitive content.' },
+  { id:'edit',      icon:Edit3,       color:'#e84545', category:'Edit'     },
+  { id:'merge',     icon:Merge,       color:'#3b82f6', category:'Organize' },
+  { id:'split',     icon:Scissors,    color:'#e84545', category:'Organize' },
+  { id:'extract',   icon:FileSearch,  color:'#f59e0b', category:'Organize' },
+  { id:'reorder',   icon:Layers,      color:'#8b5cf6', category:'Organize' },
+  { id:'rotate',    icon:RotateCcw,   color:'#8b5cf6', category:'Organize' },
+  { id:'compress',  icon:FileDown,    color:'#f59e0b', category:'Optimize' },
+  { id:'ocr',       icon:ScanLine,    color:'#10b981', category:'Convert'  },
+  { id:'watermark', icon:Droplets,    color:'#06b6d4', category:'Secure'   },
+  { id:'protect',   icon:Lock,        color:'#e84545', category:'Secure'   },
+  { id:'unlock',    icon:Unlock,      color:'#10b981', category:'Secure'   },
+  { id:'redact',    icon:EyeOff,      color:'#1a1a1a', category:'Secure'   },
 ]
 
 const TOOL_COMPONENTS = {
@@ -1122,6 +1143,7 @@ const TOOL_COMPONENTS = {
 const CATEGORIES = ['All','Organize','Optimize','Convert','Secure','Edit']
 
 export default function Tools() {
+  const { t, rtl } = useT()
   const [activeCat,  setActiveCat]  = useState('All')
   const [activeTool, setActiveTool] = useState(null)
 
@@ -1134,12 +1156,12 @@ export default function Tools() {
       <div className={styles.layout}>
         <div className={styles.sidebar}>
           <div className={styles.sidebarHeader}>
-            <span className={styles.sidebarTitle}>PDF Tools</span>
+            <span className={styles.sidebarTitle}>{t('t_pdf_tools')}</span>
             <span className={styles.toolCount}>{TOOL_DEFS.length}</span>
           </div>
           <div className={styles.cats}>
             {CATEGORIES.map(c => (
-              <button key={c} className={`${styles.catBtn} ${activeCat===c?styles.catActive:''}`} onClick={()=>setActiveCat(c)}>{c}</button>
+              <button key={c} className={`${styles.catBtn} ${activeCat===c?styles.catActive:''}`} onClick={()=>setActiveCat(c)}>{t('cat_' + c)}</button>
             ))}
           </div>
           <div className={styles.toolList}>
@@ -1151,10 +1173,10 @@ export default function Tools() {
                     <Icon size={15} style={{ color: tool.color }} />
                   </div>
                   <div className={styles.toolListInfo}>
-                    <span className={styles.toolListName}>{tool.label}</span>
-                    <span className={styles.toolListCat}>{tool.category}</span>
+                    <span className={styles.toolListName}>{t('tool_' + tool.id)}</span>
+                    <span className={styles.toolListCat}>{t('cat_' + tool.category)}</span>
                   </div>
-                  <ChevronRight size={12} className={styles.toolListArrow}/>
+                  <ChevronRight size={12} className={styles.toolListArrow} style={rtl ? { transform: 'scaleX(-1)' } : undefined}/>
                 </button>
               )
             })}
@@ -1165,15 +1187,15 @@ export default function Tools() {
           {ToolUI
             ? <>
                 <button className={styles.backBtn} onClick={() => setActiveTool(null)}>
-                  <ArrowLeft size={14}/> All tools
+                  <ArrowLeft size={14} style={rtl ? { transform: 'scaleX(-1)' } : undefined}/> {t('t_all_tools')}
                 </button>
                 <ToolUI />
               </>
             : (
               <div className={styles.toolGrid}>
                 <div className={styles.toolGridHeader}>
-                  <h1 className={styles.toolGridTitle}>All PDF Tools</h1>
-                  <p className={styles.toolGridSub}>Every tool is free, unlimited, and runs 100% in your browser.</p>
+                  <h1 className={styles.toolGridTitle}>{t('t_all_pdf_tools')}</h1>
+                  <p className={styles.toolGridSub}>{t('t_all_sub')}</p>
                 </div>
                 <div className={styles.cards}>
                   {filtered.map(tool => {
@@ -1183,9 +1205,9 @@ export default function Tools() {
                         <div className={styles.toolCardIcon} style={{ background: tool.color+'18' }}>
                           <Icon size={22} style={{ color: tool.color }} />
                         </div>
-                        <div className={styles.toolCardName}>{tool.label}</div>
-                        <div className={styles.toolCardDesc}>{tool.desc}</div>
-                        <span className={styles.freeBadge}>Free</span>
+                        <div className={styles.toolCardName}>{t('tool_' + tool.id)}</div>
+                        <div className={styles.toolCardDesc}>{t('tool_' + tool.id + '_d')}</div>
+                        <span className={styles.freeBadge}>{t('t_free')}</span>
                       </div>
                     )
                   })}

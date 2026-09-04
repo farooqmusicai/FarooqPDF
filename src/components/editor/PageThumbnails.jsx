@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { usePdfStore } from '../../store/pdfStore.js'
 import { renderThumbnail } from '../../lib/pdfRenderer.js'
 import { rotatePdf, removePageFromPdf, addPageToPdf, downloadBytes } from '../../lib/pdfExporter.js'
+import { useT } from '../../i18n/index.jsx'
 import styles from './PageThumbnails.module.css'
 
 export default function PageThumbnails() {
@@ -11,6 +12,7 @@ export default function PageThumbnails() {
   const [thumbs, setThumbs] = useState({})
   const [contextMenu, setContextMenu] = useState(null)
   const activeThumbRef = useRef(null)
+  const { t } = useT()
 
   useEffect(() => {
     if (!file || !pageCount) return
@@ -38,8 +40,8 @@ export default function PageThumbnails() {
     try {
       const bytes = await rotatePdf(file, contextMenu.pageNum, 90)
       setFile(bytes, fileName, bytes.byteLength)
-      toast.success('Page rotated')
-    } catch { toast.error('Rotation failed') }
+      toast.success(t('th_rotated'))
+    } catch { toast.error(t('th_rotate_failed')) }
     closeMenu()
   }
 
@@ -49,8 +51,8 @@ export default function PageThumbnails() {
       const bytes = await removePageFromPdf(file, contextMenu.pageNum)
       setFile(bytes, fileName, bytes.byteLength)
       if (currentPage > 1) setCurrentPage(currentPage - 1)
-      toast.success('Page deleted')
-    } catch { toast.error('Delete failed') }
+      toast.success(t('th_deleted'))
+    } catch { toast.error(t('th_delete_failed')) }
     closeMenu()
   }
 
@@ -60,14 +62,14 @@ export default function PageThumbnails() {
       const pos = pageCount
       const bytes = await addPageToPdf(file, pos)
       setFile(bytes, fileName, bytes.byteLength)
-      toast.success('Blank page added')
-    } catch { toast.error('Failed to add page') }
+      toast.success(t('th_added'))
+    } catch { toast.error(t('th_add_failed')) }
   }
 
   return (
     <div className={styles.panel} onClick={closeMenu}>
       <div className={styles.header}>
-        <span className={styles.label}>Pages</span>
+        <span className={styles.label}>{t('th_pages')}</span>
         <span className={styles.count}>{pageCount}</span>
       </div>
 
@@ -81,7 +83,7 @@ export default function PageThumbnails() {
             onContextMenu={(e) => handleRightClick(e, num)}
           >
             {thumbs[num]
-              ? <img src={thumbs[num]} alt={`Page ${num}`} className={styles.thumbImg} />
+              ? <img src={thumbs[num]} alt={t('th_page_n', { n: num })} className={styles.thumbImg} />
               : <div className={`skeleton ${styles.thumbSkeleton}`} />
             }
             <span className={styles.pageNum}>{num}</span>
@@ -89,7 +91,7 @@ export default function PageThumbnails() {
             <button
               className={styles.kebabBtn}
               onClick={(e) => { e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, pageNum: num }) }}
-              aria-label={`Page ${num} options`}
+              aria-label={t('th_page_options', { n: num })}
             >
               <MoreVertical size={13} />
             </button>
@@ -99,7 +101,7 @@ export default function PageThumbnails() {
 
       <button className={styles.addBtn} onClick={handleAddPage}>
         <Plus size={14} />
-        Add blank page
+        {t('th_add_blank')}
       </button>
 
       {contextMenu && (
@@ -111,10 +113,10 @@ export default function PageThumbnails() {
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button onClick={handleRotate}><RotateCcw size={13} /> Rotate 90°</button>
-          <button onClick={() => { toast('Duplicate coming soon'); closeMenu() }}><Copy size={13} /> Duplicate</button>
+          <button onClick={handleRotate}><RotateCcw size={13} /> {t('th_rotate')}</button>
+          <button onClick={() => { toast(t('th_duplicate_soon')); closeMenu() }}><Copy size={13} /> {t('th_duplicate')}</button>
           <div className={styles.ctxDivider} />
-          <button onClick={handleDelete} className={styles.ctxDanger}><Trash2 size={13} /> Delete page</button>
+          <button onClick={handleDelete} className={styles.ctxDanger}><Trash2 size={13} /> {t('th_delete')}</button>
         </div>
       )}
     </div>

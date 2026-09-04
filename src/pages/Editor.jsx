@@ -9,6 +9,7 @@ import PageThumbnails from '../components/editor/PageThumbnails.jsx'
 import PdfCanvas from '../components/editor/PdfCanvas.jsx'
 import PropertiesPanel from '../components/editor/PropertiesPanel.jsx'
 import DropZone from '../components/ui/DropZone.jsx'
+import { useT } from '../i18n/index.jsx'
 import styles from './Editor.module.css'
 
 export default function Editor() {
@@ -20,6 +21,7 @@ export default function Editor() {
   } = usePdfStore()
   // pdfReady gates PdfCanvas — only render after loadPdf() fully resolves
   const [pdfReady, setPdfReady] = useState(false)
+  const { t } = useT()
 
   useEffect(() => {
     if (!file) { setPdfReady(false); return }
@@ -48,9 +50,9 @@ export default function Editor() {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => setPdfReady(true))
         })
-        toast.success(`Loaded ${doc.numPages} page${doc.numPages > 1 ? 's' : ''}`)
+        toast.success(t('ed_loaded_pages', { n: doc.numPages }))
       })
-      .catch((e) => toast.error('Failed to parse PDF: ' + e.message))
+      .catch((e) => toast.error(t('ed_parse_failed', { msg: e.message })))
   }, [file, setPageCount])
 
   const handleKeyDown = useCallback((e) => {
@@ -89,7 +91,7 @@ export default function Editor() {
               <button
                 className={styles.drawerClose}
                 onClick={closeMobilePanels}
-                aria-label="Close pages panel"
+                aria-label={t('ed_close_pages')}
               >
                 <X size={16} />
               </button>
@@ -102,7 +104,7 @@ export default function Editor() {
               {!pdfReady && (
                 <div className={styles.loadingCanvas}>
                   <div className={styles.loadingSpinner} />
-                  <span>Loading PDF…</span>
+                  <span>{t('ed_loading')}</span>
                 </div>
               )}
             </main>
@@ -111,7 +113,7 @@ export default function Editor() {
               <button
                 className={styles.drawerClose}
                 onClick={closeMobilePanels}
-                aria-label="Close properties panel"
+                aria-label={t('ed_close_props')}
               >
                 <X size={16} />
               </button>
@@ -121,9 +123,9 @@ export default function Editor() {
         ) : (
           <div className={styles.emptyState}>
             <div className={styles.emptyContent}>
-              <h2 className={styles.emptyTitle}>Open a PDF to start editing</h2>
+              <h2 className={styles.emptyTitle}>{t('ed_empty_title')}</h2>
               <p className={styles.emptySub}>
-                Files are processed entirely in your browser — never uploaded anywhere.
+                {t('ed_empty_sub')}
               </p>
               <DropZone />
             </div>
@@ -134,10 +136,10 @@ export default function Editor() {
       {file && (
         <div className={styles.statusBar}>
           <span className={styles.statusFile}>📄 {fileName}</span>
-          <span className={styles.statusCenter}>Page {currentPage} of {pageCount}</span>
+          <span className={styles.statusCenter}>{t('ed_page_of', { a: currentPage, b: pageCount })}</span>
           <span className={styles.statusRight}>
             <span className={styles.privacyDot} />
-            <span className={styles.statusRightText}>Processed locally — never uploaded</span>
+            <span className={styles.statusRightText}>{t('ed_processed_locally')}</span>
           </span>
         </div>
       )}

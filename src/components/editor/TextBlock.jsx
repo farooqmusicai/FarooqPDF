@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Trash2, Copy, Wand2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { usePdfStore } from '../../store/pdfStore.js'
+import { useT } from '../../i18n/index.jsx'
 import styles from './TextBlock.module.css'
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -53,9 +54,10 @@ export default function TextBlock({
   const {
     selectedElement, setSelectedElement,
     updateTextBlock, removeTextBlock, commitExtractedEdit,
-    zoom,
+    zoom, activeTool,
   } = usePdfStore()
 
+  const { t } = useT()
   const divRef = useRef(null)
   const dragRef = useRef(null)
 
@@ -114,7 +116,7 @@ export default function TextBlock({
 
     if (isExtracted) {
       commitExtractedEdit(pageNum, block, newStr)
-      toast.success('✓ Saved', { duration: 1000 })
+      toast.success(t('tx_saved'), { duration: 1000 })
     } else {
       updateTextBlock(pageNum, block.id, { str: newStr })
     }
@@ -326,11 +328,15 @@ export default function TextBlock({
         border: `1.5px solid ${borderColor}`,
         borderRadius: isCommitted ? 2 : 1,
         // Interaction
+        // With the "add text box" tool active, clicks must reach the page even
+        // over existing (untouched) PDF text — e.g. after a white-out.
+        pointerEvents: (activeTool === 'text' && isExtracted && !block.isEdited && !editing) ? 'none' : 'auto',
         cursor,
         userSelect: editing ? 'text' : 'none',
         zIndex: editing ? 30 : block.isEdited ? 9 : isSelected ? 12 : 10,
         // No wrapping (grows right like Sejda)
         whiteSpace: 'pre',
+        unicodeBidi: 'plaintext',
         overflow: 'visible',
         outline: 'none',
         boxSizing: 'content-box',
@@ -348,7 +354,8 @@ export default function TextBlock({
       onDoubleClick={handleDoubleClick}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
-      title={fitOverflow ? 'Text may overflow the original PDF run' : editing ? undefined : 'Double-click to edit'}
+      title={fitOverflow ? t('tx_overflow') : editing ? undefined : t('tx_dblclick')}
+      dir="auto"
     >
       <span style={{ position: 'relative', zIndex: 1 }}>{draftText}</span>
     </div>
@@ -361,6 +368,7 @@ export default function TextBlock({
 // mouse cursor but too small to tap reliably with a finger.
 export function TextContextToolbar({ block, pageNum, pos, onEdit }) {
   const { removeTextBlock, updateTextBlock, setSelectedElement } = usePdfStore()
+  const { t } = useT()
 
   return (
     <div
@@ -385,22 +393,22 @@ export function TextContextToolbar({ block, pageNum, pos, onEdit }) {
       onClick={e => e.stopPropagation()}
     >
       {[
-        { label: '✏️ Edit', action: () => onEdit(), },
+        { label: `✏️ ${t('tx_edit')}`, action: () => onEdit(), },
         { label: null }, // separator
         {
-          icon: <Copy size={16} />, title: 'Duplicate', action: () => {
+          icon: <Copy size={16} />, title: t('tx_duplicate'), action: () => {
             const clone = { ...block, id: `new-${Date.now()}`, x: pos.x + 14, y: pos.y + 14, isExtracted: false, isEdited: false, originalId: undefined }
             updateTextBlock(pageNum, clone.id, clone)
-            toast.success('Duplicated')
+            toast.success(t('tx_duplicated'))
           }
         },
-        { icon: <Wand2 size={16} />, title: 'AI font match', action: () => toast('AI font match — v1.1', { icon: '✨' }) },
+        { icon: <Wand2 size={16} />, title: t('tx_ai'), action: () => toast(t('tb_ai_soon'), { icon: '✨' }) },
         { label: null }, // separator
         {
-          icon: <Trash2 size={16} />, title: 'Delete', danger: true, action: () => {
+          icon: <Trash2 size={16} />, title: t('tx_delete'), danger: true, action: () => {
             removeTextBlock(pageNum, block.id)
             setSelectedElement(null, null)
-            toast.success('Removed')
+            toast.success(t('tx_removed'))
           }
         },
       ].map((item, i) => {

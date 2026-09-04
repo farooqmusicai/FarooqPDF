@@ -3,7 +3,7 @@ import {
   MousePointer2, Type, Image, Pencil, Square, PenLine,
   Highlighter, EyeOff, Undo2, Redo2, ZoomIn, ZoomOut,
   Download, Scan, Sparkles, Loader2, Bold, Italic, Underline,
-  PanelLeft, SlidersHorizontal
+  PanelLeft, SlidersHorizontal, Eraser
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { usePdfStore } from '../../store/pdfStore.js'
@@ -11,23 +11,27 @@ import { exportPdf, downloadBytes } from '../../lib/pdfExporter.js'
 import { renderPage } from '../../lib/pdfRenderer.js'
 import { ocrCanvas } from '../../lib/ocrEngine.js'
 import DropZone from '../ui/DropZone.jsx'
+import { useT } from '../../i18n/index.jsx'
+import { OCR_LANGS } from '../../lib/ocrEngine.js'
 import styles from './EditorToolbar.module.css'
 
 const TOOLS = [
-  { id: 'select',    icon: MousePointer2, label: 'Select & edit text' },
-  { id: 'text',      icon: Type,          label: 'Add text box' },
-  { id: 'image',     icon: Image,         label: 'Add image' },
-  { id: 'draw',      icon: Pencil,        label: 'Draw' },
-  { id: 'shape',     icon: Square,        label: 'Shape' },
-  { id: 'sign',      icon: PenLine,       label: 'Sign' },
-  { id: 'highlight', icon: Highlighter,   label: 'Highlight' },
-  { id: 'redact',    icon: EyeOff,        label: 'Redact' },
+  { id: 'select',    icon: MousePointer2, label: 'tb_select' },
+  { id: 'text',      icon: Type,          label: 'tb_text' },
+  { id: 'image',     icon: Image,         label: 'tb_image' },
+  { id: 'draw',      icon: Pencil,        label: 'tb_draw' },
+  { id: 'shape',     icon: Square,        label: 'tb_shape' },
+  { id: 'sign',      icon: PenLine,       label: 'tb_sign' },
+  { id: 'highlight', icon: Highlighter,   label: 'tb_highlight' },
+  { id: 'redact',    icon: EyeOff,        label: 'tb_redact' },
+  { id: 'whiteout',  icon: Eraser,        label: 'tb_whiteout' },
 ]
 
 const FONTS = [
   'Arial', 'Helvetica', 'Times New Roman', 'Georgia',
   'Courier New', 'Verdana', 'Tahoma', 'Trebuchet MS',
   'Calibri', 'Cambria', 'Garamond', 'Palatino',
+  'Noto Naskh Arabic',
 ]
 
 export default function EditorToolbar() {
@@ -42,8 +46,11 @@ export default function EditorToolbar() {
     setMobilePagesOpen, setMobilePropertiesOpen,
   } = usePdfStore()
 
+  const { t, lang } = useT()
   const [ocrRunning,   setOcrRunning]   = useState(false)
   const [ocrProgress,  setOcrProgress]  = useState(0)
+  // OCR language defaults to the UI language (falls back to English)
+  const [ocrLang, setOcrLang] = useState(() => ({ ar: 'ara', ur: 'urd' }[lang] || 'eng'))
 
   // Mirror selected element's current formatting in the toolbar
   const sel = selectedElement
@@ -97,6 +104,7 @@ export default function EditorToolbar() {
       'Cambria':        'Cambria, Georgia, serif',
       'Garamond':       'Garamond, Georgia, serif',
       'Palatino':       '"Palatino Linotype", Georgia, serif',
+      'Noto Naskh Arabic': '"Noto Naskh Arabic", "Noto Sans", Arial, sans-serif',
     }
     applyFormat({ fontFamily: cssMap[f] || f, fontName: f })
   }
@@ -131,42 +139,42 @@ export default function EditorToolbar() {
   }
 
   const handleUndo = () => {
-    if (!undoEdit()) { toast('Nothing to undo'); return }
-    toast('Undone', { duration: 800 })
+    if (!undoEdit()) { toast(t('tb_nothing_undo')); return }
+    toast(t('tb_undone'), { duration: 800 })
   }
 
   const handleRedo = () => {
-    if (!redoEdit()) { toast('Nothing to redo'); return }
-    toast('Redone', { duration: 800 })
+    if (!redoEdit()) { toast(t('tb_nothing_redo')); return }
+    toast(t('tb_redone'), { duration: 800 })
   }
 
   const handleExport = async () => {
-    if (!file) { toast.error('No PDF loaded'); return }
-    const tid = toast.loading('Exporting PDF...')
+    if (!file) { toast.error(t('tb_no_pdf')); return }
+    const tid = toast.loading(t('tb_exporting'))
     try {
       const bytes = await exportPdf(file, editLayers, pageCount, pageBgs, blockBgs)
       downloadBytes(bytes, `pdfzero-${fileName || 'edited.pdf'}`)
-      toast.success('PDF downloaded!', { id: tid })
+      toast.success(t('tb_downloaded'), { id: tid })
     } catch (e) {
-      toast.error('Export failed: ' + e.message, { id: tid })
+      toast.error(t('tb_export_failed', { msg: e.message }), { id: tid })
     }
   }
 
   const handleOcr = async () => {
     if (!file || ocrRunning) return
     setOcrRunning(true); setOcrProgress(0)
-    const tid = toast.loading('Starting OCR...')
+    const tid = toast.loading(t('tb_ocr_start'))
     try {
       const { canvas } = await renderPage(currentPage, 1)
       const words = await ocrCanvas(canvas, pct => {
         setOcrProgress(pct)
-        toast.loading(`OCR: ${pct}%`, { id: tid })
-      })
-      if (!words.length) { toast.error('No text found', { id: tid }); return }
+        toast.loading(t('tb_ocr_pct', { pct }), { id: tid })
+      }, ocrLang)
+      if (!words.length) { toast.error(t('tb_ocr_none'), { id: tid }); return }
       words.forEach(w => addTextBlock(currentPage, w))
-      toast.success(`Found ${words.length} words`, { id: tid })
+      toast.success(t('tb_ocr_found', { n: words.length }), { id: tid })
     } catch (e) {
-      toast.error('OCR failed: ' + e.message, { id: tid })
+      toast.error(t('tb_ocr_failed', { msg: e.message }), { id: tid })
     } finally { setOcrRunning(false); setOcrProgress(0) }
   }
 
@@ -178,7 +186,7 @@ export default function EditorToolbar() {
       <button
         className={`${styles.toolBtn} ${styles.mobileOnly} ${mobilePagesOpen ? styles.active : ''}`}
         onClick={() => setMobilePagesOpen(!mobilePagesOpen)}
-        title="Pages" aria-label="Toggle pages panel"
+        title={t('tb_pages')} aria-label={t('tb_toggle_pages')}
       >
         <PanelLeft size={16} />
       </button>
@@ -191,7 +199,7 @@ export default function EditorToolbar() {
         {TOOLS.map(({ id, icon: Icon, label }) => (
           <button key={id}
             className={`${styles.toolBtn} ${activeTool === id ? styles.active : ''}`}
-            onClick={() => setActiveTool(id)} title={label} aria-label={label}
+            onClick={() => setActiveTool(id)} title={t(label)} aria-label={t(label)}
           >
             <Icon size={15} />
           </button>
@@ -206,8 +214,8 @@ export default function EditorToolbar() {
         value={fontFamily}
         onChange={e => handleFontFamily(e.target.value)}
         disabled={!hasSelection}
-        title="Font family"
-        aria-label="Font family"
+        title={t('tb_font_family')}
+        aria-label={t('tb_font_family')}
       >
         {FONTS.map(f => <option key={f} value={f}>{f}</option>)}
       </select>
@@ -220,8 +228,8 @@ export default function EditorToolbar() {
         min={4} max={200}
         disabled={!hasSelection}
         onChange={e => handleFontSize(e.target.value)}
-        title="Font size"
-        aria-label="Font size"
+        title={t('tb_font_size')}
+        aria-label={t('tb_font_size')}
       />
 
       {/* Bold */}
@@ -229,8 +237,8 @@ export default function EditorToolbar() {
         className={`${styles.fmtBtn} ${styles.desktopOnly} ${bold ? styles.fmtActive : ''}`}
         onClick={handleBold}
         disabled={!hasSelection}
-        title="Bold (affects export)"
-        aria-label="Bold"
+        title={t('tb_bold')}
+        aria-label={t('tb_bold')}
         aria-pressed={bold}
       >
         <Bold size={14} />
@@ -241,8 +249,8 @@ export default function EditorToolbar() {
         className={`${styles.fmtBtn} ${styles.desktopOnly} ${italic ? styles.fmtActive : ''}`}
         onClick={handleItalic}
         disabled={!hasSelection}
-        title="Italic (affects export)"
-        aria-label="Italic"
+        title={t('tb_italic')}
+        aria-label={t('tb_italic')}
         aria-pressed={italic}
       >
         <Italic size={14} />
@@ -253,8 +261,8 @@ export default function EditorToolbar() {
         className={`${styles.fmtBtn} ${styles.desktopOnly} ${underline ? styles.fmtActive : ''}`}
         onClick={handleUnderline}
         disabled={!hasSelection}
-        title="Underline"
-        aria-label="Underline"
+        title={t('tb_underline')}
+        aria-label={t('tb_underline')}
         aria-pressed={underline}
       >
         <Underline size={14} />
@@ -269,40 +277,51 @@ export default function EditorToolbar() {
         value={color}
         disabled={!hasSelection}
         onChange={e => handleColor(e.target.value)}
-        title="Text color"
-        aria-label="Text color"
+        title={t('tb_color')}
+        aria-label={t('tb_color')}
       />
 
       <div className={styles.sep} />
 
       {/* Undo / Redo */}
-      <button className={styles.toolBtn} onClick={handleUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
+      <button className={styles.toolBtn} onClick={handleUndo} title={t('tb_undo')} aria-label={t('tb_undo')}>
         <Undo2 size={15} />
       </button>
-      <button className={styles.toolBtn} onClick={handleRedo} title="Redo (Ctrl+Y)" aria-label="Redo">
+      <button className={styles.toolBtn} onClick={handleRedo} title={t('tb_redo')} aria-label={t('tb_redo')}>
         <Redo2 size={15} />
       </button>
 
       <div className={styles.sep} />
 
       {/* Zoom */}
-      <button className={styles.toolBtn} onClick={() => setZoom(zoom - 0.2)} title="Zoom out"><ZoomOut size={15} /></button>
+      <button className={styles.toolBtn} onClick={() => setZoom(zoom - 0.2)} title={t('tb_zoom_out')}><ZoomOut size={15} /></button>
       <span className={styles.zoomLabel}>{Math.round(zoom * 100)}%</span>
-      <button className={styles.toolBtn} onClick={() => setZoom(zoom + 0.2)} title="Zoom in"><ZoomIn size={15} /></button>
+      <button className={styles.toolBtn} onClick={() => setZoom(zoom + 0.2)} title={t('tb_zoom_in')}><ZoomIn size={15} /></button>
 
       <div className={styles.spacer} />
+
+      <select
+        className={`${styles.select} ${styles.desktopOnly}`}
+        value={ocrLang}
+        onChange={e => setOcrLang(e.target.value)}
+        disabled={ocrRunning}
+        title={t('tb_ocr_lang')}
+        aria-label={t('tb_ocr_lang')}
+      >
+        {OCR_LANGS.map(l => <option key={l.code} value={l.code}>{t(l.label)}</option>)}
+      </select>
 
       <button
         className={`${styles.aiBtn} ${ocrRunning ? styles.aiBtnActive : ''}`}
         onClick={handleOcr} disabled={ocrRunning || !file}
       >
         {ocrRunning
-          ? <><Loader2 size={13} className={styles.spin} /> OCR {ocrProgress}%</>
-          : <><Scan size={13} /> OCR</>}
+          ? <><Loader2 size={13} className={styles.spin} /> {t('tb_ocr')} {ocrProgress}%</>
+          : <><Scan size={13} /> {t('tb_ocr')}</>}
       </button>
 
-      <button className={styles.aiBtn} onClick={() => toast('AI font match — v1.1', { icon: '✨' })}>
-        <Sparkles size={13} /> AI fix
+      <button className={styles.aiBtn} onClick={() => toast(t('tb_ai_soon'), { icon: '✨' })}>
+        <Sparkles size={13} /> {t('tb_ai_fix')}
       </button>
 
       <div className={styles.sep} />
@@ -313,13 +332,13 @@ export default function EditorToolbar() {
       <button
         className={`${styles.toolBtn} ${styles.mobileOnly} ${mobilePropertiesOpen ? styles.active : ''}`}
         onClick={() => setMobilePropertiesOpen(!mobilePropertiesOpen)}
-        title="Properties" aria-label="Toggle properties panel"
+        title={t('tb_properties')} aria-label={t('tb_toggle_props')}
       >
         <SlidersHorizontal size={16} />
       </button>
 
       <button className={styles.exportBtn} onClick={handleExport} disabled={!file}>
-        <Download size={14} /> Download PDF
+        <Download size={14} /> {t('tb_download')}
       </button>
     </div>
   )

@@ -171,3 +171,10 @@
   /* On very narrow phones, drop the GitHub text entirely, icon-only */
   .starCount { display: none; }
 }
+
+.langSwitch {
+  color: var(--tx-2);
+  font-size: 12px;
+}
+.langSwitch select { color: var(--tx-1); }
+.langSwitch select option { background: var(--ink-800); color: var(--tx-1); }

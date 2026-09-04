@@ -11,6 +11,7 @@ import {
 } from '../../lib/pdfRenderer.js'
 import TextBlock, { TextContextToolbar } from './TextBlock.jsx'
 import AnnotationLayer from './AnnotationLayer.jsx'
+import { useT } from '../../i18n/index.jsx'
 import styles from './PdfCanvas.module.css'
 
 export default function PdfCanvas() {
@@ -22,6 +23,7 @@ export default function PdfCanvas() {
     setPageBg: storeSetPageBg,
     setBlockBgs,
   } = usePdfStore()
+  const { t, rtl } = useT()
 
   const canvasRef    = useRef(null)
   const containerRef = useRef(null)
@@ -74,7 +76,7 @@ export default function PdfCanvas() {
       .catch(e => {
         if (id !== renderIdRef.current) return
         setIsRendering(false)
-        toast.error('Render error: ' + e.message)
+        toast.error(t('ed_render_error', { msg: e.message }))
       })
   }, [file, currentPage, zoom])
 
@@ -125,17 +127,17 @@ export default function PdfCanvas() {
     const x = (e.clientX - rect.left)  / zoom
     const y = (e.clientY - rect.top)   / zoom
     const newBlock = {
-      id: `new-${Date.now()}`, str: 'New text',
+      id: `new-${Date.now()}`, str: t('ed_new_text'),
       x, y, width: 120, height: 20,
-      fontSize: 14, fontName: 'Helvetica',
-      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: 14, fontName: rtl ? 'Noto Naskh Arabic' : 'Helvetica',
+      fontFamily: rtl ? '"Noto Naskh Arabic", "Noto Sans", Arial, sans-serif' : 'Arial, Helvetica, sans-serif',
       fontBold: false, fontItalic: false,
       stdFont: 'Helvetica', color: '#000000',
     }
     addTextBlock(currentPage, newBlock)
     setSelectedElement(newBlock, currentPage)
     setEditingId(newBlock.id)
-  }, [activeTool, currentPage, zoom, addTextBlock, setSelectedElement])
+  }, [activeTool, currentPage, zoom, addTextBlock, setSelectedElement, t, rtl])
 
   // ── Local background sampler — each TextBlock calls this to get the
   //    exact background color from the canvas at its own position.
@@ -198,10 +200,11 @@ export default function PdfCanvas() {
   return (
     <div className={styles.wrapper}>
       <div className={styles.pageLabel}>
-        Page {currentPage} / {pageCount} &nbsp;·&nbsp; {Math.round(zoom * 100)}%
+        {t('ed_page_of', { a: currentPage, b: pageCount })} &nbsp;·&nbsp; {Math.round(zoom * 100)}%
       </div>
 
-      <div style={{ position:'relative', width:scaledW, height:scaledH, flexShrink:0 }}>
+      {/* Page coordinates are always left-to-right, whatever the UI direction */}
+      <div dir="ltr" style={{ position:'relative', width:scaledW, height:scaledH, flexShrink:0 }}>
         {/* Inner container at BASE_SCALE, CSS-scaled by zoom */}
         <div
           ref={containerRef}
