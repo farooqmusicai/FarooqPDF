@@ -1,0 +1,33 @@
+name: Build and publish to deploy branch
+
+# Every push to main builds the site for https://www.mymandoob.com/pdf/
+# and writes the finished files to the "deploy" branch.
+# Hostinger pulls that branch into public_html/pdf.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx vite build --base=/pdf/
+      - name: Publish dist to deploy branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: deploy
+          publish_dir: ./dist
+          force_orphan: true
+          commit_message: "Build ${{ github.sha }}"
