@@ -15,7 +15,7 @@ export default function Navbar({ variant = 'app' }) {
           <div className={styles.logoMark}>
             <FileText size={14} />
           </div>
-          <span className={styles.logoName}>PDFZero</span>
+          <span className={styles.logoName}>FarooqPDF</span>
           <span className={styles.logoBeta}>beta</span>
         </Link>
 
@@ -39,7 +39,7 @@ export default function Navbar({ variant = 'app' }) {
         </div>
 
         <a
-          href="https://github.com/Farooqmusic/PdfZero"
+          href="https://github.com/farooqmusicai/FarooqPDF"
           target="_blank"
           rel="noopener noreferrer"
           className={styles.githubBtn}
