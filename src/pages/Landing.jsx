@@ -59,7 +59,7 @@ export default function Landing() {
           </h1>
           <p className={styles.heroSub}>
             Many PDF tools charge a few dollars a month or limit how much you can do for free.
-            <em> PDFZero gives you text editing, OCR, signing, merging, and more at no cost</em>,
+            <em> FarooqPDF gives you text editing, OCR, signing, merging, and more at no cost</em>,
             with your files never leaving your device.
           </p>
           <div className={styles.heroActions}>
@@ -68,7 +68,7 @@ export default function Landing() {
               Start editing free
               <ChevronRight size={14} />
             </Link>
-            <a href="https://github.com/bevinkatti/pdfzero" target="_blank" rel="noopener noreferrer" className={styles.ghostBtn}>
+            <a href="https://github.com/farooqmusicai/FarooqPDF" target="_blank" rel="noopener noreferrer" className={styles.ghostBtn}>
               <Github size={15} />
               Star on GitHub
             </a>
@@ -88,7 +88,7 @@ export default function Landing() {
               <div className={styles.previewDots}>
                 <span /><span /><span />
               </div>
-              <span className={styles.previewTitle}>annual-report.pdf - PDFZero</span>
+              <span className={styles.previewTitle}>annual-report.pdf - FarooqPDF</span>
             </div>
             <div className={styles.previewContent}>
               <div className={styles.previewToolbar}>
@@ -151,14 +151,14 @@ export default function Landing() {
       <section className={styles.section} style={{ background: 'var(--bg-nav)' }}>
         <div className={styles.sectionInner}>
           <div className={styles.sectionLabel}>Comparison</div>
-          <h2 className={styles.sectionTitle}>PDFZero vs other PDF tools</h2>
+          <h2 className={styles.sectionTitle}>FarooqPDF vs other PDF tools</h2>
           <div className={styles.tableWrap}>
             <table className={styles.compareTable}>
               <thead>
                 <tr>
                   <th>Feature</th>
                   <th className={styles.thDocforge}>
-                    <div className={styles.thBadge}>PDFZero</div>
+                    <div className={styles.thBadge}>FarooqPDF</div>
                     <div className={styles.thPrice}>Free</div>
                   </th>
                   <th>
@@ -226,13 +226,13 @@ export default function Landing() {
         <div className={styles.footerInner}>
           <div className={styles.footerLogo}>
             <div className={styles.footerLogoMark}><FileText size={14} /></div>
-            <span>PDFZero</span>
+            <span>FarooqPDF</span>
           </div>
           <div className={styles.footerLinks}>
-            <a href="https://github.com/bevinkatti/pdfzero" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://github.com/farooqmusicai/FarooqPDF" target="_blank" rel="noopener noreferrer">GitHub</a>
             <Link to="/tools">All Tools</Link>
             <Link to="/editor">Editor</Link>
-            <a href="https://github.com/bevinkatti/pdfzero/issues" target="_blank" rel="noopener noreferrer">Report Bug</a>
+            <a href="https://github.com/farooqmusicai/FarooqPDF/issues" target="_blank" rel="noopener noreferrer">Report Bug</a>
           </div>
           <div className={styles.footerNote}>
             MIT License - Built with pdf-lib, PDF.js, Tesseract.js - No tracking, no analytics
