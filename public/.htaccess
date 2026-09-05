@@ -7,5 +7,7 @@
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule . /pdf/index.html [L]
 </IfModule>
+# Vite emits ES-module workers as .mjs; without this the host serves text/plain
+AddType application/javascript .js .mjs
 AddType application/wasm .wasm
 AddType font/ttf .ttf
