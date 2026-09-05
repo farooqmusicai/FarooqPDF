@@ -153,7 +153,7 @@ export default function EditorToolbar() {
     const tid = toast.loading(t('tb_exporting'))
     try {
       const bytes = await exportPdf(file, editLayers, pageCount, pageBgs, blockBgs)
-      downloadBytes(bytes, `pdfzero-${fileName || 'edited.pdf'}`)
+      downloadBytes(bytes, `farooqpdf-${fileName || 'edited.pdf'}`)
       toast.success(t('tb_downloaded'), { id: tid })
     } catch (e) {
       toast.error(t('tb_export_failed', { msg: e.message }), { id: tid })
